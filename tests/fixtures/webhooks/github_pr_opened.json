@@ -1,0 +1,25 @@
+{
+  "action": "opened",
+  "number": 42,
+  "pull_request": {
+    "number": 42,
+    "title": "Add member_tier column",
+    "head": {
+      "sha": "abc1234567890def1234567890abcdef12345678",
+      "ref": "feature/add-tier"
+    },
+    "base": {
+      "ref": "main"
+    }
+  },
+  "repository": {
+    "full_name": "your-org/your-repo",
+    "name": "your-repo",
+    "owner": {
+      "login": "your-org"
+    }
+  },
+  "sender": {
+    "login": "test-user"
+  }
+}

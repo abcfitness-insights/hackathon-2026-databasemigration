@@ -1,0 +1,25 @@
+{
+  "eventType": "git.pullrequest.created",
+  "publisherId": "tfs",
+  "resource": {
+    "pullRequestId": 42,
+    "title": "Add member_tier column",
+    "sourceRefName": "refs/heads/feature/add-tier",
+    "targetRefName": "refs/heads/main",
+    "lastMergeSourceCommit": {
+      "commitId": "abc1234567890def1234567890abcdef12345678"
+    },
+    "repository": {
+      "id": "00000000-0000-0000-0000-000000000000",
+      "name": "your-repo",
+      "project": {
+        "id": "11111111-1111-1111-1111-111111111111",
+        "name": "your-project"
+      }
+    },
+    "createdBy": {
+      "displayName": "Test User",
+      "uniqueName": "test.user@example.com"
+    }
+  }
+}

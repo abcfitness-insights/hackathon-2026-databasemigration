@@ -1,0 +1,65 @@
+# === Python build artifacts ===
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg
+*.egg-info/
+build/
+dist/
+.eggs/
+
+# === Virtual environments ===
+.venv/
+venv/
+env/
+ENV/
+
+# === Test & coverage artifacts ===
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+.tox/
+
+# === Type-checker & linter caches ===
+.mypy_cache/
+.ruff_cache/
+.pyre/
+.pytype/
+
+# === MigGuard CLI outputs (from running the demo / tests locally) ===
+report.md
+report.json
+my_test.sql
+
+# === Secrets — never commit these ===
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets.json
+credentials.json
+
+# === IDE / editor ===
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.cursor/
+
+# === OS junk ===
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# === Jupyter / notebooks ===
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# === Local-only dev helpers ===
+scratch/
+tmp/
+*.log

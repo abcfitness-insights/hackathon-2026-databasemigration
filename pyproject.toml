@@ -1,0 +1,62 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "migguard"
+version = "0.1.0"
+description = "AI-powered SQL migration script reviewer for T-SQL / Synapse. Catches data loss, locking, idempotency, and rollback gaps before scripts hit any database."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Proprietary" }
+authors = [{ name = "Nishant Mishra" }]
+keywords = ["sql", "migration", "review", "synapse", "ai", "linter", "code-review"]
+
+dependencies = [
+    "sqlglot>=23.0.0",
+    "pydantic>=2.6.0",
+    "pydantic-settings>=2.2.0",
+    "click>=8.1.7",
+    "rich>=13.7.0",
+    "pyyaml>=6.0.1",
+    "httpx>=0.27.0",
+    "fastapi>=0.110.0",
+    "uvicorn[standard]>=0.27.0",
+    "openai>=1.30.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=4.1.0",
+    "ruff>=0.4.0",
+    "mypy>=1.9.0",
+]
+
+[project.scripts]
+migguard = "migguard.cli.main:cli"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+migguard = ["rules/packs/*.yaml", "llm/prompts/*.md"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "N", "SIM", "RUF"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+asyncio_mode = "auto"
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+ignore_missing_imports = true
