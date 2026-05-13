@@ -77,23 +77,15 @@ class NamingConventionRule(Rule):
                 if col_def.name:
                     identifiers.append((stmt, "COLUMN", col_def.name))
 
-        for stmt, name, kind in self._extract_identifiers(identifiers):
-            for finding in self._check_one(script, stmt, name, kind):
-                out.append(finding)
-
-        return out
-
-    @staticmethod
-    def _extract_identifiers(
-        identifiers: list[tuple[ParsedStatement, str, str]],
-    ):
-        seen: set[tuple[str, str, str]] = set()
+        seen: set[tuple[int, str, str]] = set()
         for stmt, kind, name in identifiers:
-            key = (stmt.file_path if hasattr(stmt, "file_path") else "", kind, name)
+            key = (stmt.index, kind, name)
             if key in seen:
                 continue
             seen.add(key)
-            yield stmt, name, kind
+            out.extend(self._check_one(script, stmt, name, kind))
+
+        return out
 
     def _check_one(
         self,
@@ -108,6 +100,7 @@ class NamingConventionRule(Rule):
                 self.make_finding(
                     stmt,
                     script,
+                    rule_id="naming/non-snake-case",
                     title="Non-snake_case identifier",
                     severity=Severity.LOW,
                     message=(
@@ -118,37 +111,40 @@ class NamingConventionRule(Rule):
                     suggestion=f"Rename to `{self._suggest_snake_case(name)}`.",
                 )
             )
-            out[-1] = out[-1].model_copy(update={"rule_id": "naming/non-snake-case"})
 
         if len(name) > _MAX_LEN:
-            f = self.make_finding(
-                stmt,
-                script,
-                title="Identifier too long",
-                severity=Severity.LOW,
-                message=(
-                    f"{kind.capitalize()} `{name}` is {len(name)} chars (>{_MAX_LEN}). "
-                    "Postgres truncates at 63 chars by default; longer names risk "
-                    "collisions when porting."
-                ),
-                suggestion="Shorten the name; abbreviate non-key components.",
+            out.append(
+                self.make_finding(
+                    stmt,
+                    script,
+                    rule_id="naming/too-long",
+                    title="Identifier too long",
+                    severity=Severity.LOW,
+                    message=(
+                        f"{kind.capitalize()} `{name}` is {len(name)} chars (>{_MAX_LEN}). "
+                        "Postgres truncates at 63 chars by default; longer names risk "
+                        "collisions when porting."
+                    ),
+                    suggestion="Shorten the name; abbreviate non-key components.",
+                )
             )
-            out.append(f.model_copy(update={"rule_id": "naming/too-long"}))
 
         if name.lower() in _RESERVED:
-            f = self.make_finding(
-                stmt,
-                script,
-                title="Reserved word used as identifier",
-                severity=Severity.MEDIUM,
-                message=(
-                    f"`{name}` is a reserved word in standard SQL. Using it as "
-                    "an identifier forces every query to quote it and is a frequent "
-                    "source of cross-dialect bugs."
-                ),
-                suggestion=f"Rename to something like `{name}_id` or `{name}_name`.",
+            out.append(
+                self.make_finding(
+                    stmt,
+                    script,
+                    rule_id="naming/reserved-word",
+                    title="Reserved word used as identifier",
+                    severity=Severity.MEDIUM,
+                    message=(
+                        f"`{name}` is a reserved word in standard SQL. Using it as "
+                        "an identifier forces every query to quote it and is a frequent "
+                        "source of cross-dialect bugs."
+                    ),
+                    suggestion=f"Rename to something like `{name}_id` or `{name}_name`.",
+                )
             )
-            out.append(f.model_copy(update={"rule_id": "naming/reserved-word"}))
 
         return out
 

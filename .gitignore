@@ -49,6 +49,7 @@ credentials.json
 *.swo
 *~
 .cursor/
+.claude/
 
 # === OS junk ===
 .DS_Store

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import IO
 
 from rich.console import Console
@@ -11,6 +12,17 @@ from rich.table import Table
 from rich.text import Text
 
 from migguard.core.models import Category, Report, Severity
+
+_SQL_KEYWORDS_RE = re.compile(
+    r"(?im)^\s*(ALTER|CREATE|DROP|SELECT|INSERT|UPDATE|DELETE|MERGE|TRUNCATE|"
+    r"BEGIN|COMMIT|ROLLBACK|GRANT|REVOKE|WITH)\b"
+)
+
+
+def _looks_like_sql(text: str) -> bool:
+    """Heuristic: only fence suggestions that begin with a SQL keyword on some line."""
+    return bool(_SQL_KEYWORDS_RE.search(text))
+
 
 _SEV_STYLE = {
     Severity.HIGH: "bold red",
@@ -137,10 +149,15 @@ def format_markdown_pr_comment(report: Report) -> str:
                 lines.append("")
                 lines.append("  <details><summary>Suggested fix</summary>")
                 lines.append("")
-                lines.append("  ```sql")
-                for sl in f.suggestion.splitlines():
-                    lines.append(f"  {sl}")
-                lines.append("  ```")
+                fence = "sql" if _looks_like_sql(f.suggestion) else ""
+                if fence:
+                    lines.append(f"  ```{fence}")
+                    for sl in f.suggestion.splitlines():
+                        lines.append(f"  {sl}")
+                    lines.append("  ```")
+                else:
+                    for sl in f.suggestion.splitlines():
+                        lines.append(f"  {sl}")
                 lines.append("  </details>")
             lines.append("")
 

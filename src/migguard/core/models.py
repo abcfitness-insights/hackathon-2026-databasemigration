@@ -16,6 +16,9 @@ from typing import Self
 from pydantic import BaseModel, Field, computed_field, model_validator
 
 
+_SEVERITY_RANK = {"high": 3, "medium": 2, "low": 1, "info": 0}
+
+
 class Severity(StrEnum):
     """Risk severity. HIGH blocks merge in strict mode; MEDIUM warns; LOW informs."""
 
@@ -27,7 +30,7 @@ class Severity(StrEnum):
     @property
     def rank(self) -> int:
         """Numeric rank for sorting and aggregation. Higher = worse."""
-        return {"high": 3, "medium": 2, "low": 1, "info": 0}[self.value]
+        return _SEVERITY_RANK[self.value]
 
 
 class Category(StrEnum):

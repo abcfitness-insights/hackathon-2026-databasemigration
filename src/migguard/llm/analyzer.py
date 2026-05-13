@@ -23,6 +23,7 @@ Supports both Azure OpenAI and OpenAI direct via env vars:
 from __future__ import annotations
 
 import json
+import logging
 import os
 from pathlib import Path
 from typing import Any
@@ -38,6 +39,7 @@ from migguard.core.parser import ParsedScript
 from migguard.rules.base import RuleContext
 
 PROMPTS_DIR = Path(__file__).parent / "prompts"
+logger = logging.getLogger("migguard.llm")
 
 
 def _load_prompt(name: str) -> str:
@@ -55,12 +57,20 @@ class LLMAnalyzer:
     def _init_client() -> tuple[str, Any, str]:
         provider = os.environ.get("MIGGUARD_LLM_PROVIDER", "auto").lower()
         try:
-            if provider in ("azure", "auto") and os.environ.get("AZURE_OPENAI_API_KEY"):
+            azure_key = os.environ.get("AZURE_OPENAI_API_KEY")
+            if provider in ("azure", "auto") and azure_key:
+                azure_endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT")
+                if not azure_endpoint:
+                    logger.warning(
+                        "AZURE_OPENAI_API_KEY set but AZURE_OPENAI_ENDPOINT missing; "
+                        "disabling LLM layer"
+                    )
+                    return "disabled", None, ""
                 from openai import AzureOpenAI
 
                 client = AzureOpenAI(
-                    api_key=os.environ["AZURE_OPENAI_API_KEY"],
-                    azure_endpoint=os.environ["AZURE_OPENAI_ENDPOINT"],
+                    api_key=azure_key,
+                    azure_endpoint=azure_endpoint,
                     api_version=os.environ.get("AZURE_OPENAI_API_VERSION", "2024-06-01"),
                 )
                 deployment = os.environ.get("AZURE_OPENAI_DEPLOYMENT", "gpt-4o")
@@ -73,26 +83,38 @@ class LLMAnalyzer:
                 model = os.environ.get("MIGGUARD_LLM_MODEL", "gpt-4o-mini")
                 return "openai", client, model
         except Exception as e:  # noqa: BLE001
-            print(f"[migguard.llm] init failed: {e!r}; disabling LLM layer")
+            logger.warning("init failed: %r; disabling LLM layer", e)
 
         return "disabled", None, ""
 
     def analyze(
         self,
-        script: ParsedScript,
+        scripts: list[ParsedScript],
         rule_findings: list[Finding],
         ctx: RuleContext,
     ) -> tuple[list[Finding], str | None, str | None]:
-        """Run risk-review and rollback prompts.
+        """Run risk-review and rollback prompts across every script.
+
+        Findings are aggregated per-file. Summary and rollback are produced for
+        the first file only (multi-file summaries would be misleading without
+        an explicit aggregation prompt).
 
         Returns: (additional_findings, summary, rollback_script).
         """
-        if not self.enabled:
+        if not self.enabled or not scripts:
             return [], None, None
 
-        review = self._risk_review(script, rule_findings, ctx)
-        rollback = self._rollback(script, rule_findings)
-        return review.get("findings", []), review.get("summary"), rollback
+        all_findings: list[Finding] = []
+        summary: str | None = None
+        rollback: str | None = None
+        for idx, script in enumerate(scripts):
+            scoped = [f for f in rule_findings if f.location.file == script.file_path]
+            review = self._risk_review(script, scoped, ctx)
+            all_findings.extend(review.get("findings", []))
+            if idx == 0:
+                summary = review.get("summary")
+                rollback = self._rollback(script, scoped)
+        return all_findings, summary, rollback
 
     def _risk_review(
         self,
@@ -127,7 +149,7 @@ class LLMAnalyzer:
                     )
                 )
             except Exception as e:  # noqa: BLE001
-                print(f"[migguard.llm] dropped malformed finding: {e!r}")
+                logger.warning("dropped malformed finding: %r", e)
         return {"findings": findings, "summary": raw.get("summary")}
 
     def _rollback(self, script: ParsedScript, rule_findings: list[Finding]) -> str | None:
@@ -190,7 +212,7 @@ class LLMAnalyzer:
             content = resp.choices[0].message.content or "{}"
             return json.loads(content)
         except Exception as e:  # noqa: BLE001
-            print(f"[migguard.llm] risk_review failed: {e!r}")
+            logger.warning("risk_review failed: %r", e)
             return {}
 
     def _chat_text(self, sys_prompt: str, user_prompt: str) -> str | None:
@@ -205,5 +227,5 @@ class LLMAnalyzer:
             )
             return (resp.choices[0].message.content or "").strip() or None
         except Exception as e:  # noqa: BLE001
-            print(f"[migguard.llm] rollback_gen failed: {e!r}")
+            logger.warning("rollback_gen failed: %r", e)
             return None
