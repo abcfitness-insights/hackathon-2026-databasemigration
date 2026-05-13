@@ -50,6 +50,23 @@ _STRICT = os.environ.get("MIGGUARD_STRICT", "true").lower() in ("1", "true", "ye
 _DIALECT = os.environ.get("MIGGUARD_DIALECT", "tsql")
 
 
+def _sanitize_repo_path(path: str) -> str | None:
+    """Normalize a path from a webhook to a safe relative path, or None to reject.
+
+    Rejects absolute paths, drive letters, and ``..`` segments that would let
+    a malicious payload write outside our tempdir.
+    """
+    normalized = path.replace("\\", "/").strip()
+    if not normalized:
+        return None
+    if normalized.startswith("/") or (len(normalized) >= 2 and normalized[1] == ":"):
+        return None
+    parts = [p for p in normalized.split("/") if p and p != "."]
+    if any(p == ".." for p in parts):
+        return None
+    return "/".join(parts) if parts else None
+
+
 def _is_migration_file(path: str) -> bool:
     p = path.lower()
     if not p.endswith(".sql"):
@@ -104,7 +121,7 @@ async def webhook(request: Request, content_type: str | None = Header(default=No
     logger.info("Reviewing %d migration file(s): %s", len(migration_files), migration_files)
 
     with tempfile.TemporaryDirectory(prefix="migguard-") as tmp:
-        tmp_root = Path(tmp)
+        tmp_root = Path(tmp).resolve()
         local_paths: list[Path] = []
         for path in migration_files:
             try:
@@ -112,7 +129,14 @@ async def webhook(request: Request, content_type: str | None = Header(default=No
             except Exception as e:  # noqa: BLE001
                 logger.warning("could not fetch %s: %r", path, e)
                 continue
-            local = tmp_root / path.replace("\\", "/")
+            safe_rel = _sanitize_repo_path(path)
+            if safe_rel is None:
+                logger.warning("rejecting suspicious path from webhook: %r", path)
+                continue
+            local = (tmp_root / safe_rel).resolve()
+            if not str(local).startswith(str(tmp_root) + os.sep):
+                logger.warning("rejecting path traversal attempt: %r", path)
+                continue
             local.parent.mkdir(parents=True, exist_ok=True)
             local.write_text(text, encoding="utf-8")
             local_paths.append(local)

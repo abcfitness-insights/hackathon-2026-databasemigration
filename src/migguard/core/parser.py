@@ -21,7 +21,15 @@ import sqlglot
 from sqlglot import exp
 from sqlglot.errors import ParseError
 
-logging.getLogger("sqlglot").setLevel(logging.ERROR)
+_SQLGLOT_LOGGING_CONFIGURED = False
+
+
+def _quiet_sqlglot_once() -> None:
+    """Suppress sqlglot's chatty INFO/WARNING logs the first time we parse."""
+    global _SQLGLOT_LOGGING_CONFIGURED
+    if not _SQLGLOT_LOGGING_CONFIGURED:
+        logging.getLogger("sqlglot").setLevel(logging.ERROR)
+        _SQLGLOT_LOGGING_CONFIGURED = True
 
 
 @dataclass
@@ -230,6 +238,7 @@ def parse_script(
             statement splitter (GO + ``;``) is T-SQL specific but harmless on
             other dialects (no GO line will appear, so it never fires).
     """
+    _quiet_sqlglot_once()
     if dialect not in SUPPORTED_DIALECTS:
         raise ValueError(
             f"unsupported dialect {dialect!r}; expected one of {SUPPORTED_DIALECTS}"

@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 import click
+from rich.console import Console
 
 from migguard import __version__
 from migguard.cli import formatters
@@ -13,6 +14,7 @@ from migguard.core.engine import Engine
 from migguard.core.models import Severity
 from migguard.core.parser import SUPPORTED_DIALECTS
 from migguard.llm.analyzer import LLMAnalyzer
+from migguard.rules.base import ALL_DIALECTS
 
 
 def _collect_sql_files(targets: tuple[str, ...]) -> list[Path]:
@@ -108,7 +110,6 @@ def review(
 
     if fmt == "terminal":
         if output:
-            from rich.console import Console
             with open(output, "w", encoding="utf-8") as fh:
                 console = Console(file=fh, force_terminal=False, width=120)
                 formatters.format_terminal(report, console=console)
@@ -145,7 +146,7 @@ def rules(dialect: str) -> None:
     for r in all_rules():
         if dialect != "all" and not r.applies_to(dialect):
             continue
-        dialect_tag = "all" if len(r.dialects) == 4 else ",".join(sorted(r.dialects))
+        dialect_tag = "all" if r.dialects == ALL_DIALECTS else ",".join(sorted(r.dialects))
         click.echo(
             f"{r.severity.value:>6}  {r.rule_id:<55}  [{dialect_tag:<20}]  {r.title}"
         )

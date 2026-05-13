@@ -107,13 +107,14 @@ class Rule(ABC):
         suggestion: str | None = None,
         severity: Severity | None = None,
         schema_context: str | None = None,
+        rule_id: str | None = None,
     ) -> Finding:
         """Convenience factory — fills in rule_id, category, layer, location."""
         snippet = stmt.raw_sql.strip()
         if len(snippet) > 240:
             snippet = snippet[:237] + "..."
         return Finding(
-            rule_id=self.rule_id,
+            rule_id=rule_id or self.rule_id,
             title=title or self.title,
             severity=severity or self.severity,
             category=self.category,
