@@ -108,11 +108,12 @@ class LLMAnalyzer:
         summary: str | None = None
         rollback: str | None = None
         for idx, script in enumerate(scripts):
-            review = self._risk_review(script, rule_findings, ctx)
+            scoped = [f for f in rule_findings if f.location.file == script.file_path]
+            review = self._risk_review(script, scoped, ctx)
             all_findings.extend(review.get("findings", []))
             if idx == 0:
                 summary = review.get("summary")
-                rollback = self._rollback(script, rule_findings)
+                rollback = self._rollback(script, scoped)
         return all_findings, summary, rollback
 
     def _risk_review(
