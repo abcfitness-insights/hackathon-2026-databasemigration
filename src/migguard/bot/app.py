@@ -173,8 +173,9 @@ _PLAYGROUND_PRESETS: list[dict[str, str]] = [
         "label": "Cross-migration: column dropped then referenced",
         "dialect": "tsql",
         "sql": (
-            "-- Simulates two migrations in one paste so the lifetime rule\n"
-            "-- can see the DROP then the later reference.\n\n"
+            "-- DROP a column, then reference it in a later statement.\n"
+            "-- MigGuard flags this because replaying these statements\n"
+            "-- against a fresh database would fail on the UPDATE.\n\n"
             "ALTER TABLE app.customer DROP COLUMN status_code;\n"
             "GO\n\n"
             "UPDATE app.customer SET status_code = 'A' WHERE id < 1000;\n"

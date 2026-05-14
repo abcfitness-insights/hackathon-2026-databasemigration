@@ -1,17 +1,18 @@
-"""Tests for ObjectLifetimeRule -- the cross-migration object lifetime tracker.
+"""Tests for ObjectLifetimeRule -- the object lifetime tracker.
 
-The rule walks a chain of migrations in version order and flags DML that
-references tables / columns dropped earlier in the chain. These tests pin
-down the contract:
+The rule walks the review's statements in version order and flags DML that
+references tables / columns dropped earlier in the same review (across files
+OR within a single file). These tests pin down the contract:
 
 * True positives:
-    * stale column read after ALTER ... DROP COLUMN
-    * stale table read after DROP TABLE
+    * stale column read after ALTER ... DROP COLUMN (cross-file)
+    * stale table read after DROP TABLE (cross-file)
+    * DROP then reference inside one script (single-file)
 * True negatives (no false positives):
     * safe use of a column AFTER it was added but BEFORE it was dropped
     * read of a table that was dropped THEN recreated in the same chain
     * unqualified columns in multi-table joins (ambiguous -- skip)
-    * single-file review (rule is collection-scoped)
+    * single-script review where no DROP is seen
 """
 
 from __future__ import annotations
@@ -110,11 +111,33 @@ def test_multi_table_join_does_not_false_positive() -> None:
     )
 
 
-def test_single_file_review_emits_no_lifetime_findings() -> None:
-    """The rule is collection-scoped; one script never produces a finding."""
+def test_single_script_without_seen_drop_emits_no_finding() -> None:
+    """If the only script in the review never DROPs anything, nothing can be
+    flagged as a stale reference -- the rule only tracks objects it has
+    explicitly seen ALTER / CREATE / DROP for."""
     findings = _review("V004__stale_column_read.sql")
     lifetime_findings = [f for f in findings if f.rule_id.startswith("lifetime/")]
     assert not lifetime_findings
+
+
+def test_single_script_with_drop_then_reference_is_flagged() -> None:
+    """DROP COLUMN followed by a reference to that column INSIDE THE SAME
+    file must fire the lifetime rule. This covers the playground case where
+    a user pastes one migration containing both the DROP and the later DML."""
+    findings = _review("V010__single_file_drop_then_ref.sql")
+    matches = [
+        f
+        for f in findings
+        if f.rule_id == "lifetime/dropped-column-referenced"
+        and f.location.file.endswith("V010__single_file_drop_then_ref.sql")
+    ]
+    assert matches, (
+        "DROP COLUMN followed by a reference in the same script must fire "
+        f"lifetime/dropped-column-referenced; got {_ids(findings)}"
+    )
+    finding = matches[0]
+    assert finding.severity is Severity.HIGH
+    assert "status_code" in finding.message.lower()
 
 
 def test_full_chain_produces_both_findings() -> None:

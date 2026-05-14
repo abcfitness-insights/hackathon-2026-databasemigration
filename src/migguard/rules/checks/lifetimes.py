@@ -122,7 +122,7 @@ class ObjectLifetimeRule(Rule):
     def check_collection(
         self, scripts: list[ParsedScript], ctx: RuleContext
     ) -> list:
-        if len(scripts) < 2:
+        if not scripts:
             return []
 
         def sort_key(s: ParsedScript) -> tuple[int, int, str]:

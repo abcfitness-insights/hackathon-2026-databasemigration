@@ -112,3 +112,32 @@ def test_workflows_install_migguard_in_editable_mode() -> None:
         assert 'pip install -e ".[dev]"' in body, (
             f"{wf_path.name} must install migguard in editable mode with dev extras"
         )
+
+
+def test_migguard_review_step_avoids_template_injection_into_shell() -> None:
+    """The MigGuard review step receives PR-author-controlled filenames.
+
+    They MUST reach the shell via an env-var (``env.FILES = ${{ steps... }}``
+    + ``$FILES`` in the run block), NOT via direct ``${{ }}`` interpolation
+    into the run script. Direct interpolation would let a malicious filename
+    inject shell commands at template-substitution time.
+
+    See:
+    https://docs.github.com/en/actions/security-for-github-actions/security-guides/security-hardening-for-github-actions#understanding-the-risk-of-script-injections
+    """
+    wf = _load(MIGGUARD_WORKFLOW)
+    review_step = next(
+        s for s in wf["jobs"]["review"]["steps"] if s.get("id") == "review"
+    )
+    run_script = review_step.get("run", "") or ""
+    assert "${{ steps.changed.outputs.files }}" not in run_script, (
+        "review step must not interpolate steps.changed.outputs.files "
+        "directly into the run script; bind it to env.FILES instead"
+    )
+    env = review_step.get("env") or {}
+    assert env.get("FILES") == "${{ steps.changed.outputs.files }}", (
+        "review step must declare env.FILES from steps.changed.outputs.files"
+    )
+    assert "$FILES" in run_script, (
+        "review step must reference $FILES in its run script"
+    )
