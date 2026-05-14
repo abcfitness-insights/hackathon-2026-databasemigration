@@ -13,7 +13,12 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from migguard.core.models import Finding, Report, Severity
+from migguard.core.models import (
+    Finding,
+    Report,
+    Severity,
+    group_findings_by_location,
+)
 
 _SQL_KEYWORDS_RE = re.compile(
     r"(?im)^\s*(ALTER|CREATE|DROP|SELECT|INSERT|UPDATE|DELETE|MERGE|TRUNCATE|"
@@ -323,19 +328,14 @@ def format_markdown_pr_comment(report: Report) -> str:
         lines.append("")
         # Group findings on the same (file, line_start) so multiple rules
         # firing on the same statement render as primary + related instead of
-        # repeating the same line N times.
-        location_groups: dict[tuple[str, int], list[Finding]] = {}
-        for f in findings:
-            key = (f.location.file, f.location.line_start)
-            location_groups.setdefault(key, []).append(f)
-
+        # repeating the same line N times. Grouping algorithm lives in
+        # `group_findings_by_location` so all formatters stay in sync.
         # Split groups into expanded (anything with a HIGH/MEDIUM primary) and
         # collapsed (LOW + INFO only), so a 60-finding report doesn't drown the
         # reviewer in style-tier noise.
         expanded_groups: list[list[Finding]] = []
         collapsed_groups: list[list[Finding]] = []
-        for group in location_groups.values():
-            group.sort(key=lambda x: x.severity.rank, reverse=True)
+        for group in group_findings_by_location(findings):
             if group[0].severity.rank >= Severity.MEDIUM.rank:
                 expanded_groups.append(group)
             else:
@@ -445,12 +445,7 @@ def format_html(report: Report) -> str:
                 f"<h2>{html.escape(cat_title)} "
                 f"<span class='mg-count'>({len(findings)})</span></h2>"
             )
-            location_groups: dict[tuple[str, int], list[Finding]] = {}
-            for f in findings:
-                key = (f.location.file, f.location.line_start)
-                location_groups.setdefault(key, []).append(f)
-            for group in location_groups.values():
-                group.sort(key=lambda x: x.severity.rank, reverse=True)
+            for group in group_findings_by_location(findings):
                 primary = group[0]
                 related = group[1:]
                 sev_class = _HTML_SEV_CLASS[primary.severity]

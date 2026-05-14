@@ -159,30 +159,45 @@ class Report(BaseModel):
         return grouped
 
     def findings_by_location(self) -> list[list[Finding]]:
-        """Group findings by ``(file, line_start)`` so the formatters can render
-        a primary finding plus its related observations together.
+        """Group all findings by ``(file, line_start)``.
 
-        Rules that fire on the same statement (e.g. ``DROP TABLE`` triggers both
-        ``data-loss/drop-table`` and ``idempotency/drop-without-if-exists``)
-        become one group: the highest-severity finding is the primary; the rest
-        appear as related context.
-
-        Returns a list of groups, each sorted by severity descending. The
-        outer list is sorted with the most severe groups first.
+        Thin wrapper around :func:`group_findings_by_location`; see that
+        function for grouping and sorting semantics.
         """
-        groups: dict[tuple[str, int], list[Finding]] = {}
-        for f in self.findings:
-            key = (f.location.file, f.location.line_start)
-            groups.setdefault(key, []).append(f)
-        for group in groups.values():
-            group.sort(key=lambda f: f.severity.rank, reverse=True)
+        return group_findings_by_location(self.findings)
 
-        def sort_key(group: list[Finding]) -> tuple:
-            primary = group[0]
-            return (
-                -primary.severity.rank,
-                primary.location.file,
-                primary.location.line_start,
-            )
 
-        return sorted(groups.values(), key=sort_key)
+def group_findings_by_location(findings: list[Finding]) -> list[list[Finding]]:
+    """Group findings by ``(file, line_start)`` and sort consistently.
+
+    Single source of truth for the grouping algorithm used by every
+    formatter (Markdown, HTML, future ones) and by
+    :meth:`Report.findings_by_location`. Centralising it here means
+    changes to grouping semantics happen in exactly one place.
+
+    Rules that fire on the same statement (e.g. ``DROP TABLE`` triggers
+    both ``data-loss/drop-table`` and
+    ``idempotency/drop-without-if-exists``) become one group: the
+    highest-severity finding is the primary; the rest are related context.
+
+    Returns a list of groups. Within each group findings are sorted by
+    severity descending. The outer list is sorted by primary severity
+    (worst first) with ``(file, line_start)`` as a deterministic
+    tiebreaker.
+    """
+    groups: dict[tuple[str, int], list[Finding]] = {}
+    for f in findings:
+        key = (f.location.file, f.location.line_start)
+        groups.setdefault(key, []).append(f)
+    for group in groups.values():
+        group.sort(key=lambda f: f.severity.rank, reverse=True)
+
+    def sort_key(group: list[Finding]) -> tuple:
+        primary = group[0]
+        return (
+            -primary.severity.rank,
+            primary.location.file,
+            primary.location.line_start,
+        )
+
+    return sorted(groups.values(), key=sort_key)
