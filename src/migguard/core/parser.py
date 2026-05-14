@@ -173,12 +173,14 @@ def _split_batch(batch_text: str, first_line: int) -> list[tuple[str, int, int]]
 
         if ch == "-" and nxt == "-":
             in_line_comment = True
-            buf.append(ch); buf.append(nxt)
+            buf.append(ch)
+            buf.append(nxt)
             i += 2
             continue
         if ch == "/" and nxt == "*":
             in_block_comment = True
-            buf.append(ch); buf.append(nxt)
+            buf.append(ch)
+            buf.append(nxt)
             i += 2
             continue
         if ch == "'":
@@ -260,7 +262,7 @@ def parse_script(
             ast = non_null[0] if non_null else None
         except ParseError as e:
             parse_error = str(e).splitlines()[0] if str(e) else "parse error"
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             parse_error = f"unexpected parser error: {e!r}"
 
         script.statements.append(

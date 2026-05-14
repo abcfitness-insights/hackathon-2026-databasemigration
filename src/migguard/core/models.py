@@ -9,12 +9,11 @@ These models are the contract between every component:
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Self
 
 from pydantic import BaseModel, Field, computed_field, model_validator
-
 
 _SEVERITY_RANK = {"high": 3, "medium": 2, "low": 1, "info": 0}
 
@@ -96,7 +95,7 @@ class Finding(BaseModel):
         default=None,
         description=(
             "Live schema facts that justify the severity, e.g. "
-            "'dw.member has 12.4M rows, 3 active indexes'."
+            "'app.customer has 12.4M rows, 3 active indexes'."
         ),
     )
     references: list[str] = Field(
@@ -124,7 +123,7 @@ class Report(BaseModel):
         default=None,
         description="Best-effort auto-generated rollback. Always marked 'review required'.",
     )
-    generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     engine_version: str = "0.1.0"
 
     @computed_field  # type: ignore[prop-decorator]
@@ -158,3 +157,32 @@ class Report(BaseModel):
         for cat in grouped:
             grouped[cat].sort(key=lambda f: f.severity.rank, reverse=True)
         return grouped
+
+    def findings_by_location(self) -> list[list[Finding]]:
+        """Group findings by ``(file, line_start)`` so the formatters can render
+        a primary finding plus its related observations together.
+
+        Rules that fire on the same statement (e.g. ``DROP TABLE`` triggers both
+        ``data-loss/drop-table`` and ``idempotency/drop-without-if-exists``)
+        become one group: the highest-severity finding is the primary; the rest
+        appear as related context.
+
+        Returns a list of groups, each sorted by severity descending. The
+        outer list is sorted with the most severe groups first.
+        """
+        groups: dict[tuple[str, int], list[Finding]] = {}
+        for f in self.findings:
+            key = (f.location.file, f.location.line_start)
+            groups.setdefault(key, []).append(f)
+        for group in groups.values():
+            group.sort(key=lambda f: f.severity.rank, reverse=True)
+
+        def sort_key(group: list[Finding]) -> tuple:
+            primary = group[0]
+            return (
+                -primary.severity.rank,
+                primary.location.file,
+                primary.location.line_start,
+            )
+
+        return sorted(groups.values(), key=sort_key)

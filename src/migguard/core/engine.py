@@ -74,7 +74,7 @@ class Engine:
             for rule in self.active_rules:
                 try:
                     findings = rule.check(script, context)
-                except Exception as e:  # noqa: BLE001 -- one bad rule must not crash the review
+                except Exception as e:
                     logger.warning("rule %s crashed on %s: %r", rule.rule_id, path, e)
                     all_findings.append(_rule_crash_finding(rule.rule_id, str(path), e))
                     continue
@@ -83,7 +83,7 @@ class Engine:
         for rule in self.active_rules:
             try:
                 all_findings.extend(rule.check_collection(parsed_scripts, context))
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 logger.warning("rule %s collection check crashed: %r", rule.rule_id, e)
                 file_for_crash = files[0] if files else "<collection>"
                 all_findings.append(_rule_crash_finding(rule.rule_id, file_for_crash, e))
@@ -96,7 +96,7 @@ class Engine:
                     parsed_scripts, all_findings, context
                 )
                 all_findings.extend(llm_findings)
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 logger.warning("LLM analyzer failed: %r", e)
 
         return Report(

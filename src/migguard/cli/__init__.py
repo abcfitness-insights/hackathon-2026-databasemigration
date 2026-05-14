@@ -1,1 +1,1 @@
-"""CLI entry point. Day 6 fills this in."""
+"""Command-line interface for MigGuard (``migguard review``, ``migguard explain``)."""

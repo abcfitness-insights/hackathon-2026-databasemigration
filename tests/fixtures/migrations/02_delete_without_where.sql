@@ -3,7 +3,7 @@
 
 BEGIN TRANSACTION;
 
-DELETE FROM dw.drdr_dmb;
+DELETE FROM app.event_log;
 
 COMMIT TRANSACTION;
 GO

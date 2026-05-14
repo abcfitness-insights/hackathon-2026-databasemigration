@@ -3,7 +3,7 @@
   "number": 42,
   "pull_request": {
     "number": 42,
-    "title": "Add member_tier column",
+    "title": "Add priority_band column",
     "head": {
       "sha": "abc1234567890def1234567890abcdef12345678",
       "ref": "feature/add-tier"

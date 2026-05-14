@@ -9,7 +9,7 @@ for the row counts and index info.
 
 The JSON format is simple:
 {
-    "dw.member": {"schema": "dw", "name": "member", "row_count": 12400000, "index_count": 3, "foreign_key_count": 2, "size_mb": 1820.5},
+    "app.customer": {"schema": "app", "name": "customer", "row_count": 12400000, "index_count": 3, "foreign_key_count": 2, "size_mb": 1820.5},
     ...
 }
 """

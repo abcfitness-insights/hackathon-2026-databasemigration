@@ -3,7 +3,7 @@
   "publisherId": "tfs",
   "resource": {
     "pullRequestId": 42,
-    "title": "Add member_tier column",
+    "title": "Add priority_band column",
     "sourceRefName": "refs/heads/feature/add-tier",
     "targetRefName": "refs/heads/main",
     "lastMergeSourceCommit": {

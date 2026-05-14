@@ -1,0 +1,46 @@
+# Example custom rule pack.
+#
+# Drop this file (or a copy) anywhere in your repo, then run:
+#
+#   migguard review path/to/migrations/ --rules-config examples/custom-rules.yaml
+#
+# Each rule fires whenever its `pattern` regex matches the raw SQL of any
+# parsed statement. Regex flags are inline (e.g. `(?i)` for case-insensitive).
+# `category` must be one of:
+#   data_loss, locking, idempotency, compatibility, permissions,
+#   transaction, rollback, naming, ordering, dependency, performance, other
+# `severity` must be one of: high, medium, low, info
+# `dialects` is optional; omit to apply to all SQL dialects.
+
+version: 1
+rules:
+  - id: company/no-nolock-hint
+    title: NOLOCK hint forbidden
+    severity: medium
+    category: locking
+    dialects: [tsql]
+    pattern: '(?i)\bWITH\s*\(\s*NOLOCK\s*\)'
+    message: >-
+      NOLOCK reads uncommitted (dirty) data. Use snapshot isolation
+      (READ COMMITTED SNAPSHOT) at the database level instead.
+    suggestion: >-
+      Remove the WITH (NOLOCK) hint. If you genuinely need dirty reads for a
+      reporting query, route it through a read-replica or a snapshot view.
+
+  - id: company/no-deprecated-schema
+    title: Reference to deprecated schema
+    severity: high
+    category: ordering
+    pattern: '(?i)\blegacy_2018\.'
+    message: >-
+      The legacy_2018 schema is on a deprecation path. New migrations must
+      not reference its tables.
+
+  - id: company/tables-must-use-app-prefix
+    title: New tables must live in the app schema
+    severity: medium
+    category: naming
+    pattern: '(?i)create\s+table\s+(?!app\.)(\w+\.)?\w+'
+    message: >-
+      New tables should be created in the app schema (e.g. app.customer).
+      The dbo / public schemas are reserved for legacy data.

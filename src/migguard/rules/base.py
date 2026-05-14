@@ -33,10 +33,10 @@ class RuleContext:
     DEFAULT on a small lookup table is fine; on a 47M-row fact table it's HIGH).
     """
 
-    schema_facts: dict[str, "TableFacts"] = field(default_factory=dict)
+    schema_facts: dict[str, TableFacts] = field(default_factory=dict)
     config: dict[str, object] = field(default_factory=dict)
 
-    def fact_for(self, schema: str | None, table: str) -> "TableFacts | None":
+    def fact_for(self, schema: str | None, table: str) -> TableFacts | None:
         if not table:
             return None
         key = f"{(schema or 'dbo').lower()}.{table.lower()}"

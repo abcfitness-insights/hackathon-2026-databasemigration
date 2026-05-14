@@ -67,7 +67,7 @@ def test_webhook_reviews_migration_file_and_posts_comment() -> None:
     client = TestClient(app)
 
     fake_changed = ["migrations/20260512_bad_migration.sql"]
-    fake_file = "DELETE FROM dw.drdr_dmb;\nGO\n"
+    fake_file = "DELETE FROM app.event_log;\nGO\n"
 
     posted: dict[str, str] = {}
     status: dict[str, str] = {}
@@ -121,7 +121,7 @@ def test_webhook_parses_azure_devops_event() -> None:
     client = TestClient(app)
 
     fake_changed = ["migrations/2026_drop.sql"]
-    fake_file = "DROP TABLE dw.member_legacy_archive_2019;\n"
+    fake_file = "DROP TABLE app.legacy_archive;\n"
 
     with (
         patch(
@@ -150,8 +150,8 @@ def test_webhook_parses_azure_devops_event() -> None:
                 "targetRefName": "refs/heads/main",
                 "lastMergeSourceCommit": {"commitId": "cafebabe"},
                 "repository": {
-                    "name": "data-platform",
-                    "project": {"name": "ABCFinancial"},
+                    "name": "sample-repo",
+                    "project": {"name": "example-project"},
                 },
             },
         }

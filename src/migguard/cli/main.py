@@ -16,6 +16,29 @@ from migguard.core.parser import SUPPORTED_DIALECTS
 from migguard.llm.analyzer import LLMAnalyzer
 from migguard.rules.base import ALL_DIALECTS
 
+_FAIL_ON_MAP: dict[str, Severity | None] = {
+    "high": Severity.HIGH,
+    "medium": Severity.MEDIUM,
+    "low": Severity.LOW,
+    "never": None,
+}
+
+
+def _resolve_fail_threshold(
+    *, fail_on: str | None, strict: bool
+) -> Severity | None:
+    """Translate ``--fail-on`` / ``--strict`` into a severity threshold.
+
+    ``--strict`` is preserved as a backward-compat alias for
+    ``--fail-on high``. If both are passed, ``--fail-on`` wins so users can
+    deliberately override the legacy flag without removing it from CI YAML.
+    """
+    if fail_on is not None:
+        return _FAIL_ON_MAP[fail_on.lower()]
+    if strict:
+        return Severity.HIGH
+    return None
+
 
 def _collect_sql_files(targets: tuple[str, ...]) -> list[Path]:
     """Expand a mix of files / directories into a sorted list of *.sql files."""
@@ -53,7 +76,7 @@ def cli(ctx: click.Context) -> None:
 @click.option(
     "--format",
     "fmt",
-    type=click.Choice(["terminal", "json", "markdown"]),
+    type=click.Choice(["terminal", "json", "markdown", "html", "sarif"]),
     default="terminal",
     help="Output format.",
 )
@@ -77,10 +100,27 @@ def cli(ctx: click.Context) -> None:
     help="Disable the LLM analyzer even if API keys are present.",
 )
 @click.option(
+    "--rules-config",
+    "rules_config",
+    type=click.Path(exists=True, dir_okay=False),
+    default=None,
+    help="Path to a YAML file with additional regex-based rules.",
+)
+@click.option(
     "--strict",
     is_flag=True,
     default=False,
-    help="Exit with code 1 if any HIGH-severity finding is present.",
+    help="Alias for --fail-on high. Kept for backward compatibility.",
+)
+@click.option(
+    "--fail-on",
+    "fail_on",
+    type=click.Choice(["high", "medium", "low", "never"], case_sensitive=False),
+    default=None,
+    help=(
+        "Exit non-zero when the overall severity meets or exceeds this level. "
+        "Defaults to 'never' (no gate). 'high' matches old --strict behaviour."
+    ),
 )
 @click.option(
     "--dialect",
@@ -95,7 +135,9 @@ def review(
     output: str | None,
     schema_snapshot: str | None,
     no_llm: bool,
+    rules_config: str | None,
     strict: bool,
+    fail_on: str | None,
     dialect: str,
 ) -> None:
     """Review one or more migration files / directories."""
@@ -104,8 +146,25 @@ def review(
         click.echo("No .sql files found.", err=True)
         sys.exit(2)
 
+    from migguard.rules.registry import all_rules
+
+    rules = all_rules()
+    if rules_config:
+        from migguard.rules.yaml_rules import YamlRuleConfigError, load_yaml_rules
+
+        try:
+            rules = rules + load_yaml_rules(rules_config)
+        except YamlRuleConfigError as exc:
+            click.echo(f"Error loading rules config: {exc}", err=True)
+            sys.exit(2)
+
     llm = None if no_llm else LLMAnalyzer()
-    engine = Engine(schema_snapshot_path=schema_snapshot, llm=llm, dialect=dialect)
+    engine = Engine(
+        rules=rules,
+        schema_snapshot_path=schema_snapshot,
+        llm=llm,
+        dialect=dialect,
+    )
     report = engine.review(files)
 
     if fmt == "terminal":
@@ -127,15 +186,28 @@ def review(
             Path(output).write_text(text, encoding="utf-8")
         else:
             click.echo(text)
+    elif fmt == "html":
+        text = formatters.format_html(report)
+        if output:
+            Path(output).write_text(text, encoding="utf-8")
+        else:
+            click.echo(text)
+    elif fmt == "sarif":
+        text = formatters.format_sarif(report)
+        if output:
+            Path(output).write_text(text, encoding="utf-8")
+        else:
+            click.echo(text)
 
-    if strict and report.overall_severity is Severity.HIGH:
+    effective_threshold = _resolve_fail_threshold(fail_on=fail_on, strict=strict)
+    if effective_threshold is not None and report.overall_severity.rank >= effective_threshold.rank:
         sys.exit(1)
 
 
 @cli.command()
 @click.option(
     "--dialect",
-    type=click.Choice(list(SUPPORTED_DIALECTS) + ["all"]),
+    type=click.Choice([*SUPPORTED_DIALECTS, "all"]),
     default="all",
     show_default=True,
 )
@@ -150,6 +222,49 @@ def rules(dialect: str) -> None:
         click.echo(
             f"{r.severity.value:>6}  {r.rule_id:<55}  [{dialect_tag:<20}]  {r.title}"
         )
+
+
+@cli.command()
+@click.argument("rule_id", required=True)
+def explain(rule_id: str) -> None:
+    """Explain a rule_id with rationale, a bad example, and the safe pattern.
+
+    Example:
+        migguard explain data-loss/delete-without-where
+    """
+    from migguard.cli.explanations import find_explanation, suggest_similar
+
+    explanation = find_explanation(rule_id)
+    if explanation is None:
+        click.echo(f"No documented rule with ID '{rule_id}'.", err=True)
+        suggestions = suggest_similar(rule_id)
+        if suggestions:
+            click.echo("\nDid you mean one of:", err=True)
+            for s in suggestions:
+                click.echo(f"  - {s}", err=True)
+        click.echo("\nList all rules: migguard rules", err=True)
+        sys.exit(2)
+
+    console = Console()
+    console.print(f"[bold]{explanation.rule_id}[/bold]")
+    console.print(f"[dim]{explanation.title}[/dim]")
+    console.print(
+        f"Severity: [bold]{explanation.severity}[/bold]   "
+        f"Category: [bold]{explanation.category}[/bold]\n"
+    )
+    console.print("[bold]Why this matters[/bold]")
+    console.print(explanation.why)
+    console.print("")
+    console.print("[bold red]Risky pattern[/bold red]")
+    console.print(f"[red]{explanation.bad_example}[/red]")
+    console.print("")
+    console.print("[bold green]Safe pattern[/bold green]")
+    console.print(f"[green]{explanation.good_example}[/green]")
+    if explanation.references:
+        console.print("")
+        console.print("[bold]References[/bold]")
+        for ref in explanation.references:
+            console.print(f"  - {ref}")
 
 
 if __name__ == "__main__":
