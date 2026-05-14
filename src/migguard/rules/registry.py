@@ -16,9 +16,15 @@ from migguard.rules.checks.idempotency import (
     CreateTableWithoutIfNotExistsRule,
     DropWithoutIfExistsRule,
 )
+from migguard.rules.checks.lifetimes import ObjectLifetimeRule
 from migguard.rules.checks.locking import (
     CreateIndexWithoutOnlineRule,
     NotNullDefaultOnLargeTableRule,
+)
+from migguard.rules.checks.mysql_rules import (
+    AlterTableWithoutAlgorithmRule,
+    Utf8NotUtf8mb4Rule,
+    ZeroDateDefaultRule,
 )
 from migguard.rules.checks.naming import NamingConventionRule
 from migguard.rules.checks.permissions import GrantOrDenyRule
@@ -46,4 +52,8 @@ def all_rules() -> list[Rule]:
         IrreversibleWithoutDownScriptRule(),
         NamingConventionRule(),
         VersionSequencingRule(),
+        ObjectLifetimeRule(),
+        AlterTableWithoutAlgorithmRule(),
+        Utf8NotUtf8mb4Rule(),
+        ZeroDateDefaultRule(),
     ]

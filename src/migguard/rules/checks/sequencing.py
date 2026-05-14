@@ -20,6 +20,7 @@ pick a sequence number. Timestamps are treated as monotonic, not contiguous.
 from __future__ import annotations
 
 import re
+from itertools import pairwise
 from pathlib import Path
 
 from migguard.core.models import (
@@ -133,7 +134,7 @@ class VersionSequencingRule(Rule):
             unique = sorted({seq for seq, _ in items})
             if len(unique) < 2:
                 continue
-            for prev, nxt in zip(unique, unique[1:]):
+            for prev, nxt in pairwise(unique):
                 if nxt - prev > 1:
                     missing = list(range(prev + 1, nxt))
                     target_script = next(s for seq, s in items if seq == nxt)

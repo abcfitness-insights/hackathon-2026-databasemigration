@@ -6,8 +6,8 @@
 --   MEDIUM idempotency/missing-if-exists on line 8
 --   MEDIUM rollback/no-down-script on line 8
 
-DROP TABLE dw.member_legacy_archive_2019;
+DROP TABLE app.legacy_archive;
 GO
 
-DROP INDEX IX_member_email ON dw.member;
+DROP INDEX IX_customer_email ON app.customer;
 GO

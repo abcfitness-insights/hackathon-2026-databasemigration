@@ -7,11 +7,11 @@ BEGIN TRY
     IF NOT EXISTS (
         SELECT 1
         FROM   sys.columns
-        WHERE  object_id = OBJECT_ID(N'dw.member')
+        WHERE  object_id = OBJECT_ID(N'app.customer')
         AND    name = N'preferred_contact_method'
     )
     BEGIN
-        ALTER TABLE dw.member
+        ALTER TABLE app.customer
             ADD preferred_contact_method NVARCHAR(32) NULL;
     END
 

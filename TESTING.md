@@ -31,6 +31,8 @@ python -m migguard.cli.main --help
 
 Should show the `migguard` CLI help. If you see this, you're ready.
 
+> **Windows Python 3.14 gotcha:** `pip install -e .` puts `migguard.exe` in `%LOCALAPPDATA%\Python\pythoncore-3.14-64\Scripts`, which may not be on your PATH. If `migguard --help` says "not recognized", either (a) use `python -m migguard.cli.main ...` everywhere instead of `migguard ...`, or (b) add that Scripts folder to your User PATH and reopen PowerShell. The two forms are interchangeable throughout this guide.
+
 ---
 
 ## Level 1 — CLI testing (the engine)
@@ -41,7 +43,7 @@ Should show the `migguard` CLI help. If you see this, you're ready.
 python -m pytest -v
 ```
 
-**Expected:** A long list of `PASSED` lines and at the bottom `42 passed in ~0.5s`. If you see 42 passed, the engine is healthy.
+**Expected:** A long list of `PASSED` lines and at the bottom `158 passed in ~0.9s`. If you see 158 passed, the engine is healthy.
 
 ### 1.2 List all the rules MigGuard knows
 
@@ -49,7 +51,7 @@ python -m pytest -v
 python -m migguard.cli.main rules
 ```
 
-**Expected:** A table of 16 rules — their IDs, severities (high / medium / low), which dialects they apply to, one-line descriptions.
+**Expected:** A table of 20 rules — their IDs, severities (high / medium / low), which dialects they apply to, one-line descriptions.
 
 Try filtering by dialect:
 
@@ -57,7 +59,7 @@ Try filtering by dialect:
 python -m migguard.cli.main rules --dialect postgres
 ```
 
-**Expected:** 12 rules instead of 16 — the four T-SQL-specific rules disappear.
+**Expected:** 13 rules instead of 20 — the T-SQL-specific and MySQL-specific rules disappear, leaving the universal data-loss / idempotency / sequencing / naming / lifetime checks.
 
 ### 1.3 Review a clean migration (proves no false positives)
 
@@ -67,13 +69,21 @@ python -m migguard.cli.main review tests/fixtures/migrations/01_clean_add_column
 
 **Expected:** Green `No findings. Migration looks safe to review.`
 
-### 1.4 Review the showstopper bad migration
+### 1.4 The killer demo — schema-aware risk escalation
 
 ```powershell
 python -m migguard.cli.main review tests/fixtures/migrations/02_delete_without_where.sql
 ```
 
-**Expected:** A red **HIGH** finding that includes the literal text **"~47,200,000 rows"** — that's MigGuard cross-referencing the SQL with the schema snapshot to estimate impact. This is the demo moment.
+**Expected:** A red **HIGH** finding `data-loss/delete-without-where` — the `DELETE FROM app.event_log` line is flagged because the statement has no `WHERE` clause and would wipe the entire table.
+
+Now the schema-aware moment:
+
+```powershell
+python -m migguard.cli.main review tests/fixtures/migrations/03_not_null_default_on_big_table.sql
+```
+
+**Expected:** A red **HIGH** finding `locking/not-null-default-on-large-table`. The message ends with the literal text **`app.customer has ~12,400,000 rows and 3 index(es)`** — that's MigGuard cross-referencing the SQL with the schema snapshot. A rules-only linter would call this MEDIUM. MigGuard escalates to HIGH because the table is big. This is the demo moment.
 
 ### 1.5 Review a multi-issue file
 
@@ -91,19 +101,25 @@ python demo/run_demo.py --no-llm
 
 **Expected:** The tool reviews every fixture in order — clean one is green, bad ones are red/yellow. Best command to record for a demo video.
 
-### 1.7 Try all three output formats
+### 1.7 Try all five output formats
 
 ```powershell
-python -m migguard.cli.main review tests/fixtures/migrations/02_delete_without_where.sql
-python -m migguard.cli.main review tests/fixtures/migrations/02_delete_without_where.sql --format json --output report.json
-python -m migguard.cli.main review tests/fixtures/migrations/02_delete_without_where.sql --format markdown --output report.md
+$f = "tests/fixtures/migrations/03_not_null_default_on_big_table.sql"
+python -m migguard.cli.main review $f --no-llm                                                            # rich (default)
+python -m migguard.cli.main review $f --no-llm --format json     | Out-File report.json    -Encoding utf8
+python -m migguard.cli.main review $f --no-llm --format markdown | Out-File report.md      -Encoding utf8
+python -m migguard.cli.main review $f --no-llm --format html     | Out-File report.html    -Encoding utf8
+python -m migguard.cli.main review $f --no-llm --format sarif    | Out-File report.sarif   -Encoding utf8
+Invoke-Item report.html      # opens the styled report in your browser
 ```
 
-- **Terminal** format = colored output in the console
-- **JSON** format = machine-readable, what CI/CD consumes
-- **Markdown** format = exactly what would be posted as a PR comment
+- **Rich** (default) — colored, table-formatted output for the terminal
+- **JSON** — machine-readable, what CI/CD consumes
+- **Markdown** — the literal text that gets posted as a PR comment
+- **HTML** — self-contained styled report for sharing with non-technical reviewers
+- **SARIF 2.1.0** — feeds GitHub Advanced Security / code-scanning dashboards (drop the file in any SARIF-aware tool)
 
-Open `report.md` in VS Code / Cursor — that's the literal text that goes on a PR.
+Same engine, five consumers. Open `report.md` in VS Code / Cursor to see what would appear on a PR.
 
 ### 1.8 Try a non-T-SQL dialect
 
@@ -124,27 +140,95 @@ python -m migguard.cli.main review tests/fixtures/duplicates/
 - First command: MEDIUM finding `"Version sequence jumps from 2 to 4 - missing: V003"` (because the fixtures contain V001, V002, V004, V005)
 - Second command: HIGH finding flagging that V003 is claimed twice
 
-### 1.10 Strict mode (the CI behavior)
+### 1.10 CI exit codes (`--fail-on` / `--strict`)
+
+The CLI's exit code is what your CI pipeline blocks on. `--fail-on {high,medium,low,never}` controls the threshold; `--strict` is an alias for `--fail-on high`.
 
 ```powershell
-python -m migguard.cli.main review tests/fixtures/migrations/02_delete_without_where.sql --strict
-echo $LASTEXITCODE
+# A HIGH finding with --fail-on never -> exit 0 (advisory mode, never blocks)
+python -m migguard.cli.main review tests/fixtures/migrations/02_delete_without_where.sql --no-llm --fail-on never *>$null; echo $LASTEXITCODE
+
+# A HIGH finding with --fail-on high -> exit 1 (blocks CI)
+python -m migguard.cli.main review tests/fixtures/migrations/02_delete_without_where.sql --no-llm --fail-on high *>$null; echo $LASTEXITCODE
+
+# A clean file with --strict -> exit 0
+python -m migguard.cli.main review tests/fixtures/migrations/00_realistic_clean_migration.sql --no-llm --strict *>$null; echo $LASTEXITCODE
 ```
 
-**Expected:** Prints `1` — exit code indicating "blocking finding". This is how a CI pipeline blocks a bad migration from merging.
+**Expected:** `0`, `1`, `0`. Drop `migguard review ... --strict` into CI and the build fails exactly when there's something worth failing on.
+
+### 1.11 `migguard explain` — built-in docs for every rule
 
 ```powershell
-python -m migguard.cli.main review tests/fixtures/migrations/01_clean_add_column.sql --strict
-echo $LASTEXITCODE
+python -m migguard.cli.main explain locking/not-null-default-on-large-table
 ```
 
-**Expected:** Prints `0` — passed.
+**Expected:** Severity rationale, "Why this matters", the risky pattern, the safe pattern.
+
+Try a typo:
+
+```powershell
+python -m migguard.cli.main explain mysql/utf8
+```
+
+**Expected:** `Did you mean one of: mysql/utf8-not-utf8mb4, mysql/alter-table-without-algorithm, mysql/zero-date-default`.
+
+### 1.12 Custom team-specific rules (YAML rule packs)
+
+Teams codify their own coding standards (forbidden schemas, banned hints, naming policies) in a YAML file without writing Python. We ship a fully commented sample at `examples/custom-rules.yaml`.
+
+```powershell
+"SELECT * FROM legacy_2018.report_view WITH (NOLOCK);" | Set-Content scratch.sql -Encoding ascii
+python -m migguard.cli.main review scratch.sql --no-llm --rules-config examples/custom-rules.yaml
+Remove-Item scratch.sql
+```
+
+**Expected:** Findings include `company/no-nolock-hint` (MEDIUM) and `company/no-deprecated-schema` (HIGH). Neither is built into MigGuard — both come from the YAML file.
+
+### 1.13 Pre-commit hook (inspect the contract)
+
+```powershell
+Get-Content .pre-commit-hooks.yaml
+```
+
+This is what other repos drop into their **own** `.pre-commit-config.yaml`:
+
+```yaml
+- repo: https://github.com/abcfitness-insights/hackathon-2026-databasemigration
+  rev: master
+  hooks:
+    - id: migguard-review-strict
+      files: ^(migrations|db/migrations|sql/migrations)/.*\.sql$
+```
+
+**Expected:** With this in place, `git commit` on a `migrations/*.sql` file automatically gets reviewed. Bad SQL is blocked before it becomes a PR. The manifest's schema is validated by `tests/test_precommit_hooks.py` on every test run.
 
 ---
 
 ## Level 2 — Bot testing on your laptop (no deployment needed)
 
-This is the path most teammates will care about. You run the FastAPI bot locally and send it fake webhook payloads. This proves the entire bot pipeline (event detection → provider routing → file fetching → review → comment) works for **both GitHub and Azure DevOps** from one binary.
+You run the FastAPI app locally. It exposes two surfaces from one binary:
+
+- A **browser playground** (`/playground`) — paste SQL, get a review, no curl needed. The easiest local test path.
+- A **webhook receiver** (`/webhook`) — accepts fake GitHub or Azure DevOps PR events and proves the cross-platform pipeline (event detection → provider routing → file fetching → review → comment).
+
+### 2.0 The web playground (no terminal needed after step 1)
+
+```powershell
+python -m uvicorn migguard.bot.app:app --port 8080
+```
+
+Open `http://localhost:8080/playground` in your browser. Try each of these:
+
+1. The example SQL is pre-filled — click **Review**. A HIGH-severity report appears below in an iframe.
+2. **"Load an example" dropdown** — pick `MySQL: utf8 vs utf8mb4 (silent emoji loss)`. SQL + dialect swap. Click Review.
+3. **`Ctrl + Enter`** inside the textarea — the form submits without touching the mouse.
+4. After a review, click **`Download HTML`** — saves the styled report locally.
+5. Click **`Copy as Markdown`** — paste into Notepad to verify the PR-comment markdown was copied.
+6. **Edit some SQL, refresh the page** (F5). Your edits are still there (localStorage persistence).
+7. **Scroll the SQL** — the line-number gutter scrolls in sync.
+
+**`Ctrl + C`** in the terminal to stop. This proves anyone in the company without Python can review SQL by pasting it in a browser. **No execution against any DB happens** — purely static analysis.
 
 ### IMPORTANT — Windows PowerShell gotcha
 
@@ -195,7 +279,7 @@ curl.exe -X POST http://localhost:8080/webhook `
 
 **What you'll see in the BOT window:**
 ```
-INFO migguard.bot: PR event: github your-org/your-repo#42 (Add member_tier column)
+INFO migguard.bot: PR event: github your-org/your-repo#42 (Add priority_band column)
 ```
 
 That log line is the proof: **MigGuard detected the GitHub event, parsed it correctly, and routed it through the GitHub provider.** It then tries to call the real GitHub API to fetch the file — which fails because `your-org/your-repo` doesn't exist. That's expected and fine. The pipeline up to that point works.
@@ -215,7 +299,7 @@ Note: no special header for ADO — the bot detects it from the `eventType` fiel
 
 **What you'll see in the BOT window:**
 ```
-INFO migguard.bot: PR event: azdo your-project/your-repo#42 (Add member_tier column)
+INFO migguard.bot: PR event: azdo your-project/your-repo#42 (Add priority_band column)
 ```
 
 Same proof, for ADO: detection, parsing, and routing all work. Auto-detection between GitHub and Azure DevOps is confirmed.
@@ -290,9 +374,9 @@ python -m uvicorn migguard.bot.app:app --port 8080 --reload
 1. In the sandbox repo, create a branch — call it `test/migguard-demo`
 2. Add a file `migrations/V001__bad_test.sql` with:
    ```sql
-   DELETE FROM dw.drdr_dmb;
+   DELETE FROM app.event_log;
    GO
-   DROP TABLE dw.member;
+   DROP TABLE app.customer;
    ```
 3. Commit and push
 4. Open a PR from `test/migguard-demo` → `main`
@@ -345,16 +429,16 @@ If you set the status as required in branch policies, the merge button is blocke
 The best test is to try to outsmart MigGuard. Open Cursor / VS Code, create a file `my_test.sql` anywhere, and write some intentionally bad SQL:
 
 ```sql
-TRUNCATE TABLE dw.member;
+TRUNCATE TABLE app.customer;
 GO
 
-DROP TABLE dw.tmp_thing;
+DROP TABLE app.tmp_scratch;
 GO
 
-UPDATE dw.drdr_dmb SET DAILY_AMOUNT = 0;
+UPDATE app.event_log SET daily_total = 0;
 GO
 
-GRANT ALL ON SCHEMA::dw TO PUBLIC;
+GRANT ALL ON SCHEMA::app TO PUBLIC;
 GO
 ```
 
@@ -364,7 +448,7 @@ Run it:
 python -m migguard.cli.main review my_test.sql
 ```
 
-You should see a wall of findings — TRUNCATE flagged, DROP TABLE flagged with the 47M row count for `dw.drdr_dmb` and 12.4M for `dw.member`, UPDATE-without-WHERE flagged, GRANT to PUBLIC flagged.
+You should see a wall of findings — TRUNCATE flagged (HIGH), DROP TABLE flagged (HIGH) for `app.customer`, UPDATE-without-WHERE flagged (HIGH) on `app.event_log`, GRANT to PUBLIC flagged (HIGH), missing `IF EXISTS` flagged (MEDIUM). The row-count escalation message (`~12,400,000 rows`, `~47,200,000 rows`) appears on rules that actually escalate by table size — primarily `locking/not-null-default-on-large-table`. Try adding an `ALTER TABLE app.event_log ADD newcol VARCHAR(20) NOT NULL DEFAULT 'x';` line to your test file and re-run to see it.
 
 **If you can write bad SQL that MigGuard misses, that's a real bug we can fix.** Bring it up in the team channel.
 
@@ -381,52 +465,67 @@ Total runtime: ~6 minutes. Each step is one terminal command.
    ```powershell
    python -m pytest -v
    ```
-   Just shows `42 passed` for credibility.
+   Just shows `158 passed` for credibility.
 
 3. **The rule catalog** (15 sec)
    ```powershell
    python -m migguard.cli.main rules
    ```
-   Shows what the tool knows.
+   Shows what the tool knows — 20 rules across data-loss, locking, idempotency, compatibility, permissions, transaction, rollback, naming, sequencing, lifetimes, and MySQL-specific categories.
 
 4. **A clean migration — no false positives** (15 sec)
    ```powershell
-   python -m migguard.cli.main review tests/fixtures/migrations/01_clean_add_column.sql
+   python -m migguard.cli.main review tests/fixtures/migrations/00_realistic_clean_migration.sql
    ```
-   Green output.
+   Green output. A production-quality migration: nullable add, batched backfill, transactional, idempotent.
 
-5. **The killer moment — schema-aware impact estimate** (30 sec)
+5. **The killer moment — schema-aware risk escalation** (30 sec)
    ```powershell
-   python -m migguard.cli.main review tests/fixtures/migrations/02_delete_without_where.sql
+   python -m migguard.cli.main review tests/fixtures/migrations/03_not_null_default_on_big_table.sql
    ```
-   Point at the "47,200,000 rows" line. Pause. "That's the entire daily-detail table."
+   Point at the `~12,400,000 rows` line. Pause. "That's the customer table. A rules-only linter calls this MEDIUM. MigGuard escalates to HIGH because it knows the table is big."
 
 6. **The full demo loop** (90 sec)
    ```powershell
    python demo/run_demo.py --no-llm
    ```
-   Watch every fixture get reviewed.
+   Watch every fixture get reviewed — clean ones green, risky ones red.
 
-7. **The PR comment preview** (45 sec)
+7. **Self-documenting rules** (15 sec)
+   ```powershell
+   python -m migguard.cli.main explain locking/not-null-default-on-large-table
+   ```
+   "Every finding tells you what to do instead — no source-diving needed."
+
+8. **The PR comment preview** (45 sec)
    ```powershell
    python -m migguard.cli.main review tests/fixtures/migrations/05_mixed_severity.sql --format markdown
    ```
    "This is the literal text that would appear as a comment on a GitHub or Azure DevOps PR."
 
-8. **The bot is real, both providers work** (90 sec)
-   - Start the bot
-   - `curl.exe http://localhost:8080/health` → ok
-   - `curl.exe` the GitHub fixture → bot log shows "PR event: github ..."
-   - `curl.exe` the ADO fixture → bot log shows "PR event: azdo ..."
-   - "Same endpoint, same code, same Docker image — works for both."
+9. **The web playground** (60 sec)
+   Open `http://localhost:8080/playground` in a browser. Paste a risky migration. Click Review. Point at the inline report. "Anyone in the company, no Python install, no terminal."
 
-9. **The safety story** (30 sec, no command)
-   "Zero database writes. The whole tool is read-only by architecture. Three layers of defense."
+10. **The bot is real, both providers work** (90 sec)
+    - Start the bot
+    - `curl.exe http://localhost:8080/health` → ok
+    - `curl.exe` the GitHub fixture → bot log shows "PR event: github ..."
+    - `curl.exe` the ADO fixture → bot log shows "PR event: azdo ..."
+    - "Same endpoint, same code, same Docker image — works for both."
 
-10. **Future work** (15 sec, no command)
-    "Live schema facts via Synapse MCP, Cursor IDE skill, Slack notifier, historical risk dashboard."
+11. **Custom team rules** (20 sec)
+    ```powershell
+    python -m migguard.cli.main review scratch.sql --rules-config examples/custom-rules.yaml
+    ```
+    "Teams add their own coding standards in a YAML file — no Python required."
 
-That's the demo. 6 minutes, no infrastructure required.
+12. **The safety story** (30 sec, no command)
+    "Zero database writes. The whole tool is read-only by architecture. Three layers of defense: read-only schema snapshot, no SQL execution, no DB connection at runtime."
+
+13. **Future work** (15 sec, no command)
+    "Live schema facts via Synapse MCP, deeper Postgres rule pack, inline PR line annotations, webhook signature verification."
+
+That's the demo. 7 minutes, no infrastructure required.
 
 ---
 
@@ -443,6 +542,10 @@ You didn't install in editable mode. Run:
 cd migguard
 pip install -e ".[dev]"
 ```
+
+### `migguard : The term 'migguard' is not recognized`
+
+The package installed correctly, but pip put `migguard.exe` in a Scripts folder that's not on your PATH (common on Windows Python 3.14). See the "Windows Python 3.14 gotcha" note in [Prerequisites](#prerequisites-one-time-2-minutes). The quickest fix is to use `python -m migguard.cli.main ...` everywhere instead of the bare `migguard` command — the two forms are equivalent.
 
 ### Tests fail with `sqlglot.errors.ParseError`
 

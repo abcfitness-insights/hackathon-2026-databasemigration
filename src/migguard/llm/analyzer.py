@@ -82,7 +82,7 @@ class LLMAnalyzer:
                 client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
                 model = os.environ.get("MIGGUARD_LLM_MODEL", "gpt-4o-mini")
                 return "openai", client, model
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             logger.warning("init failed: %r; disabling LLM layer", e)
 
         return "disabled", None, ""
@@ -148,7 +148,7 @@ class LLMAnalyzer:
                         suggestion=item.get("suggestion"),
                     )
                 )
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 logger.warning("dropped malformed finding: %r", e)
         return {"findings": findings, "summary": raw.get("summary")}
 
@@ -211,7 +211,7 @@ class LLMAnalyzer:
             )
             content = resp.choices[0].message.content or "{}"
             return json.loads(content)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             logger.warning("risk_review failed: %r", e)
             return {}
 
@@ -226,6 +226,6 @@ class LLMAnalyzer:
                 temperature=0.1,
             )
             return (resp.choices[0].message.content or "").strip() or None
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             logger.warning("rollback_gen failed: %r", e)
             return None

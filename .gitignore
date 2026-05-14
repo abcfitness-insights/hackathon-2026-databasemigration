@@ -32,6 +32,8 @@ coverage.xml
 report.md
 report.json
 my_test.sql
+*.html
+migguard-report.md
 
 # === Secrets — never commit these ===
 .env

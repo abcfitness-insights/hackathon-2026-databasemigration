@@ -1,0 +1,43 @@
+# MigGuard pre-commit hook definitions.
+#
+# Consumers wire this into their own .pre-commit-config.yaml like so:
+#
+# repos:
+#   - repo: https://github.com/abcfitness-insights/hackathon-2026-databasemigration
+#     rev: master
+#     hooks:
+#       - id: migguard-review
+#
+# The hook only runs against staged .sql files, so it stays fast in monorepos
+# where most commits don't touch migrations.
+
+- id: migguard-review
+  name: MigGuard - review staged SQL migrations
+  description: >-
+    Runs MigGuard against every staged .sql file and fails the commit if any
+    HIGH-severity finding is present. LLM analysis is disabled in pre-commit
+    to keep the gate fast and offline-friendly.
+  entry: python -m migguard.cli.main review
+  language: python
+  files: \.sql$
+  args:
+    - --no-llm
+    - --fail-on
+    - high
+    - --format
+    - terminal
+
+- id: migguard-review-strict
+  name: MigGuard - block on MEDIUM or worse
+  description: >-
+    Stricter variant for teams that want to block merges on MEDIUM findings
+    too (e.g. missing rollback scripts, idempotency issues).
+  entry: python -m migguard.cli.main review
+  language: python
+  files: \.sql$
+  args:
+    - --no-llm
+    - --fail-on
+    - medium
+    - --format
+    - terminal

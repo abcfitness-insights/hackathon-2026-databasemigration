@@ -1,2 +1,2 @@
-ALTER TABLE dw.member ADD phone NVARCHAR(32) NULL;
+ALTER TABLE app.customer ADD phone NVARCHAR(32) NULL;
 GO

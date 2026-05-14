@@ -27,7 +27,7 @@ def test_delete_without_where_detected_at_root() -> None:
     script = parse_script(FIXTURES / "02_delete_without_where.sql")
     deletes = script.by_node_type(exp.Delete)
     assert len(deletes) == 1, "expected exactly one DELETE at the AST root"
-    stmt, node = deletes[0]
+    _, node = deletes[0]
     assert node.find(exp.Where) is None, "fixture must NOT have a WHERE clause"
 
 
