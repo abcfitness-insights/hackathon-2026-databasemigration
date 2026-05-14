@@ -36,7 +36,9 @@ jobs:
         run: |
           base="${{ github.event.pull_request.base.sha }}"
           head="${{ github.event.pull_request.head.sha }}"
-          files=$(git diff --name-only --diff-filter=ACMRT "$base" "$head" -- '*.sql' | tr '\n' ' ')
+          # Exclude tests/fixtures/** — those files are deliberately broken SQL
+          # used to exercise the rule pack and would always trip --strict.
+          files=$(git diff --name-only --diff-filter=ACMRT "$base" "$head" -- '*.sql' ':!tests/fixtures/**' | tr '\n' ' ')
           files="${files% }"
           echo "files=$files" >> "$GITHUB_OUTPUT"
           if [ -z "$files" ]; then
