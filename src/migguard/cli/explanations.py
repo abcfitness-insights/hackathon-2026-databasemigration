@@ -459,6 +459,173 @@ EXPLANATIONS: dict[str, RuleExplanation] = {
             "specifically need a non-null sentinel."
         ),
     ),
+    "joins/missing-on-clause": RuleExplanation(
+        rule_id="joins/missing-on-clause",
+        title="JOIN without ON clause (cartesian risk)",
+        severity="HIGH (MEDIUM on explicit CROSS JOIN)",
+        category="performance",
+        why=(
+            "A JOIN with no ON predicate produces a Cartesian product -- "
+            "every row on the left paired with every row on the right. "
+            "Against real production tables this turns a one-second query "
+            "into a billion-row scan that locks resources for hours. "
+            "Explicit CROSS JOIN is at least intentional, so it gets "
+            "MEDIUM; an implicit `A JOIN B` with no ON is HIGH."
+        ),
+        bad_example=(
+            "SELECT c.customer_id, o.order_id\n"
+            "FROM   app.customer c\n"
+            "JOIN   app.staging_inbox o;   -- no ON clause"
+        ),
+        good_example=(
+            "SELECT c.customer_id, o.order_id\n"
+            "FROM   app.customer c\n"
+            "JOIN   app.staging_inbox o\n"
+            "  ON   o.customer_id = c.customer_id;"
+        ),
+    ),
+    "joins/many-to-many-risk": RuleExplanation(
+        rule_id="joins/many-to-many-risk",
+        title="Possible many-to-many JOIN on non-key columns",
+        severity="MEDIUM",
+        category="performance",
+        why=(
+            "Joining two large tables on non-key columns is the classic "
+            "recipe for accidental row explosion: if either side has "
+            "duplicate values for the join column, the result row count "
+            "multiplies. This rule only fires when both tables are "
+            "confirmed large in the schema snapshot, so it doesn't false-"
+            "positive on small lookup tables or against unknown schemas."
+        ),
+        bad_example=(
+            "-- app.customer (12.4M rows) JOIN app.event_log (47.2M rows)\n"
+            "-- on a non-key business attribute can explode catastrophically:\n"
+            "SELECT c.customer_id, e.event_id\n"
+            "FROM   app.customer c\n"
+            "JOIN   app.event_log e ON c.region_code = e.region_code;"
+        ),
+        good_example=(
+            "-- Pre-aggregate the larger side, or join on the primary key:\n"
+            "SELECT c.customer_id, e.last_event\n"
+            "FROM   app.customer c\n"
+            "JOIN ( SELECT customer_id, MAX(occurred_at) AS last_event\n"
+            "       FROM   app.event_log\n"
+            "       GROUP BY customer_id ) e\n"
+            "  ON   e.customer_id = c.customer_id;"
+        ),
+    ),
+    "joins/on-nullable-key": RuleExplanation(
+        rule_id="joins/on-nullable-key",
+        title="JOIN on a column that's nullable in this migration",
+        severity="LOW",
+        category="performance",
+        why=(
+            "A nullable column used as a join key silently drops rows on "
+            "inner joins (NULL != NULL in SQL three-valued logic) and "
+            "produces surprising results on outer joins. The rule fires "
+            "only when a nullable column is added earlier in the SAME "
+            "script and used in a later JOIN -- so it's zero-false-"
+            "positive against pre-existing schema we know nothing about."
+        ),
+        bad_example=(
+            "ALTER TABLE app.customer ADD region_code VARCHAR(10) NULL;\n"
+            "GO\n"
+            "SELECT c.customer_id, o.order_id\n"
+            "FROM   app.customer c\n"
+            "JOIN   app.staging_inbox o\n"
+            "  ON   c.region_code = o.region_code;  -- silently drops NULLs"
+        ),
+        good_example=(
+            "-- Backfill non-NULLs and enforce NOT NULL before any join uses it:\n"
+            "ALTER TABLE app.customer ADD region_code VARCHAR(10) NULL;\n"
+            "UPDATE app.customer SET region_code = 'US' WHERE region_code IS NULL;\n"
+            "ALTER TABLE app.customer ALTER COLUMN region_code VARCHAR(10) NOT NULL;\n"
+            "-- Or handle NULL explicitly in the predicate:\n"
+            "--   ON ISNULL(c.region_code,'') = ISNULL(o.region_code,'')"
+        ),
+    ),
+    "joins/function-on-key": RuleExplanation(
+        rule_id="joins/function-on-key",
+        title="Function call inside a JOIN's ON predicate",
+        severity="MEDIUM",
+        category="performance",
+        why=(
+            "Wrapping a column in a function (UPPER, LOWER, CAST, "
+            "COALESCE, SUBSTRING, ...) inside an ON predicate prevents "
+            "the optimizer from using an index seek. The function has to "
+            "be evaluated for every row, forcing a full scan. This is "
+            "the classic 'the query suddenly got 100x slower' pattern."
+        ),
+        bad_example=(
+            "SELECT c.customer_id, o.order_id\n"
+            "FROM   app.customer c\n"
+            "JOIN   app.staging_inbox o\n"
+            "  ON   UPPER(c.email) = LOWER(o.contact_email);"
+        ),
+        good_example=(
+            "-- Normalize at write time so the join can compare bare columns:\n"
+            "ALTER TABLE app.customer       ADD email_normalized AS LOWER(email) PERSISTED;\n"
+            "ALTER TABLE app.staging_inbox  ADD email_normalized AS LOWER(contact_email) PERSISTED;\n"
+            "-- Then index and join on the persisted column:\n"
+            "SELECT c.customer_id, o.order_id\n"
+            "FROM   app.customer c\n"
+            "JOIN   app.staging_inbox o\n"
+            "  ON   c.email_normalized = o.email_normalized;"
+        ),
+    ),
+    "rollback/index-drop-without-recreate": RuleExplanation(
+        rule_id="rollback/index-drop-without-recreate",
+        title="DROP INDEX without a matching CREATE INDEX",
+        severity="MEDIUM",
+        category="rollback",
+        why=(
+            "A DROP INDEX without a matching CREATE INDEX in the same "
+            "migration permanently changes query plans -- every query "
+            "that previously used the dropped index will now scan the "
+            "base table. This is almost always an oversight. If the "
+            "index is genuinely obsolete, leave a code-review comment "
+            "explaining why so the next reviewer doesn't reintroduce it."
+        ),
+        bad_example=(
+            "DROP INDEX ix_customer_email ON app.customer;\n"
+            "-- no matching CREATE INDEX anywhere in the migration"
+        ),
+        good_example=(
+            "-- If you mean to swap definitions, do both in the same migration:\n"
+            "DROP INDEX ix_customer_email ON app.customer;\n"
+            "GO\n"
+            "CREATE NONCLUSTERED INDEX ix_customer_email\n"
+            "    ON app.customer (email, status)\n"
+            "    WITH (ONLINE = ON);"
+        ),
+    ),
+    "compatibility/dbcc-command": RuleExplanation(
+        rule_id="compatibility/dbcc-command",
+        title="DBCC command inside a migration (T-SQL)",
+        severity="MEDIUM (HIGH on SHRINK*, DROPCLEANBUFFERS, REPAIR_ALLOW_DATA_LOSS)",
+        category="compatibility",
+        why=(
+            "DBCC is the T-SQL diagnostic / maintenance family (CHECKDB, "
+            "SHRINKFILE, DROPCLEANBUFFERS, ...). These commands are meant "
+            "to be run interactively by a DBA, not committed to source "
+            "control. Several variants are actively dangerous in "
+            "production: `SHRINK*` causes severe index fragmentation, "
+            "`DROPCLEANBUFFERS` flushes the buffer cache, and `CHECKDB "
+            "... REPAIR_ALLOW_DATA_LOSS` can permanently delete rows to "
+            "make a corrupt database readable."
+        ),
+        bad_example=(
+            "DBCC SHRINKDATABASE ('AppDb', 10);\n"
+            "DBCC CHECKDB ('AppDb', REPAIR_ALLOW_DATA_LOSS);"
+        ),
+        good_example=(
+            "-- Move DBCC out of the schema-change pipeline entirely.\n"
+            "-- Schedule routine maintenance through your operations\n"
+            "-- runbook. If a DBA needs to repair corruption, run REPAIR\n"
+            "-- interactively in a maintenance window, never via the\n"
+            "-- forward-migration deploy job."
+        ),
+    ),
 }
 
 

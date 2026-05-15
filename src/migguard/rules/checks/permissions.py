@@ -8,6 +8,7 @@ import re
 
 from migguard.core.models import Category, Finding, Severity
 from migguard.core.parser import ParsedScript
+from migguard.rules._sql_text import strip_sql_noise
 from migguard.rules.base import Rule, RuleContext
 
 
@@ -22,7 +23,10 @@ class GrantOrDenyRule(Rule):
     def check(self, script: ParsedScript, ctx: RuleContext) -> list[Finding]:
         out: list[Finding] = []
         for stmt in script.statements:
-            m = self._RE.search(stmt.raw_sql)
+            # Scrub so audit-log entries like `('Reviewed GRANT to svc_user')`
+            # or comments like `-- DENY would be safer here` don't fire a
+            # bogus security-review finding.
+            m = self._RE.search(strip_sql_noise(stmt.raw_sql))
             if not m:
                 continue
             verb = m.group(1).upper()

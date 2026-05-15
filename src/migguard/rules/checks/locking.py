@@ -9,6 +9,7 @@ from sqlglot import exp
 
 from migguard.core.models import Category, Finding, Severity
 from migguard.core.parser import ParsedScript
+from migguard.rules._sql_text import strip_sql_noise
 from migguard.rules.base import Rule, RuleContext
 from migguard.rules.checks.data_loss import _table_name
 
@@ -99,7 +100,10 @@ class CreateIndexWithoutOnlineRule(Rule):
         for stmt, node in script.by_node_type(exp.Create):
             if (node.args.get("kind") or "").upper() != "INDEX":
                 continue
-            if self._ONLINE_RE.search(stmt.raw_sql):
+            # Scrub raw_sql so an ONLINE=ON keyword in a comment or string
+            # literal doesn't suppress the finding on a real CREATE INDEX
+            # that lacks the hint.
+            if self._ONLINE_RE.search(strip_sql_noise(stmt.raw_sql)):
                 continue
             out.append(
                 self.make_finding(

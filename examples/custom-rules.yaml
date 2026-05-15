@@ -11,6 +11,12 @@
 #   transaction, rollback, naming, ordering, dependency, performance, other
 # `severity` must be one of: high, medium, low, info
 # `dialects` is optional; omit to apply to all SQL dialects.
+# `scrub_noise: true` is optional (default false). When set, MigGuard
+#   strips SQL comments and single-quoted string literals from each
+#   statement before applying your regex. Use this whenever your pattern
+#   targets a SQL keyword (DBCC, DROP, MERGE, NOLOCK, ...) so the rule
+#   doesn't false-positive on audit-log payloads or TODO comments that
+#   merely mention the keyword.
 
 version: 1
 rules:
@@ -20,6 +26,7 @@ rules:
     category: locking
     dialects: [tsql]
     pattern: '(?i)\bWITH\s*\(\s*NOLOCK\s*\)'
+    scrub_noise: true
     message: >-
       NOLOCK reads uncommitted (dirty) data. Use snapshot isolation
       (READ COMMITTED SNAPSHOT) at the database level instead.

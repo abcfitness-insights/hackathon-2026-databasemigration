@@ -9,6 +9,7 @@ from sqlglot import exp
 
 from migguard.core.models import Category, Finding, Severity
 from migguard.core.parser import ParsedScript
+from migguard.rules._sql_text import strip_sql_noise
 from migguard.rules.base import Rule, RuleContext
 
 _TSQL_ONLY = frozenset({"tsql"})
@@ -30,11 +31,16 @@ class DropWithoutIfExistsRule(Rule):
     def check(self, script: ParsedScript, ctx: RuleContext) -> list[Finding]:
         out: list[Finding] = []
         for stmt in script.statements:
-            if not self._DROP_RE.search(stmt.raw_sql):
+            # Scrub comments + string literals so keywords appearing in
+            # `-- comment text` or `'audit log entry'` don't trigger either
+            # the DROP detection (false positive) or the IF EXISTS /
+            # OBJECT_ID guards (false negative).
+            clean = strip_sql_noise(stmt.raw_sql)
+            if not self._DROP_RE.search(clean):
                 continue
-            if self._IF_EXISTS_RE.search(stmt.raw_sql):
+            if self._IF_EXISTS_RE.search(clean):
                 continue
-            if self._OBJECT_ID_RE.search(stmt.raw_sql):
+            if self._OBJECT_ID_RE.search(clean):
                 continue
             out.append(
                 self.make_finding(
@@ -67,9 +73,13 @@ class CreateTableWithoutIfNotExistsRule(Rule):
         for stmt, node in script.by_node_type(exp.Create):
             if (node.args.get("kind") or "").upper() != "TABLE":
                 continue
-            if self._IF_NOT_EXISTS_RE.search(stmt.raw_sql):
+            # Scrub raw_sql so a guard mentioned in a comment ("we should
+            # add IF NOT EXISTS here") or a string literal doesn't fool
+            # the rule into thinking the CREATE is protected.
+            clean = strip_sql_noise(stmt.raw_sql)
+            if self._IF_NOT_EXISTS_RE.search(clean):
                 continue
-            if self._OBJECT_ID_NULL_RE.search(stmt.raw_sql):
+            if self._OBJECT_ID_NULL_RE.search(clean):
                 continue
             out.append(
                 self.make_finding(
@@ -107,9 +117,12 @@ class AlterTableWithoutGuardRule(Rule):
             adds_column = any(alter.find_all(exp.ColumnDef))
             if not adds_column:
                 continue
-            if self._SYS_COLUMNS_RE.search(stmt.raw_sql):
+            # Scrub raw_sql so a guard keyword appearing in a comment or
+            # string literal doesn't suppress the finding on a real ALTER.
+            clean = strip_sql_noise(stmt.raw_sql)
+            if self._SYS_COLUMNS_RE.search(clean):
                 continue
-            if self._COL_PROP_RE.search(stmt.raw_sql):
+            if self._COL_PROP_RE.search(clean):
                 continue
             out.append(
                 self.make_finding(

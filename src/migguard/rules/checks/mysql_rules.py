@@ -22,6 +22,7 @@ from sqlglot import exp
 
 from migguard.core.models import Category, Finding, Severity
 from migguard.core.parser import ParsedScript
+from migguard.rules._sql_text import strip_sql_comments, strip_sql_noise
 from migguard.rules.base import Rule, RuleContext
 from migguard.rules.checks.data_loss import _table_name
 
@@ -143,7 +144,10 @@ class Utf8NotUtf8mb4Rule(Rule):
         del ctx
         findings: list[Finding] = []
         for stmt in script.statements:
-            if not self._RE.search(stmt.raw_sql):
+            # `CHARACTER SET utf8` is DDL syntax, never legitimate inside a
+            # string literal or comment. Scrub both so audit-log payloads
+            # like `('Switched CHARACTER SET utf8 to utf8mb4')` don't fire.
+            if not self._RE.search(strip_sql_noise(stmt.raw_sql)):
                 continue
             findings.append(
                 self.make_finding(
@@ -185,7 +189,12 @@ class ZeroDateDefaultRule(Rule):
         del ctx
         findings: list[Finding] = []
         for stmt in script.statements:
-            if not self._RE.search(stmt.raw_sql):
+            # This rule INTENTIONALLY pattern-matches a string literal
+            # (`'0000-00-00'`), so we must NOT strip string literals -- that
+            # would silence the rule entirely. We do strip comments so a
+            # legacy reference like `-- old default was '0000-00-00'`
+            # doesn't fire spuriously.
+            if not self._RE.search(strip_sql_comments(stmt.raw_sql)):
                 continue
             findings.append(
                 self.make_finding(

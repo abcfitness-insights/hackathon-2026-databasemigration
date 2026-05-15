@@ -12,6 +12,7 @@ from pathlib import Path
 
 from migguard.core.models import Category, Finding, Severity
 from migguard.core.parser import ParsedScript
+from migguard.rules._sql_text import strip_sql_noise
 from migguard.rules.base import Rule, RuleContext
 
 
@@ -27,7 +28,10 @@ class IrreversibleWithoutDownScriptRule(Rule):
     )
 
     def check(self, script: ParsedScript, ctx: RuleContext) -> list[Finding]:
-        if not any(self._IRREVERSIBLE_RE.search(s.raw_sql) for s in script.statements):
+        # Cache the scrubbed raw_sql per statement so we don't strip twice
+        # (once for the early-exit check, once in the per-statement loop).
+        scrubbed = [strip_sql_noise(s.raw_sql) for s in script.statements]
+        if not any(self._IRREVERSIBLE_RE.search(s) for s in scrubbed):
             return []
 
         path = Path(script.file_path)
@@ -43,8 +47,8 @@ class IrreversibleWithoutDownScriptRule(Rule):
             return []
 
         out: list[Finding] = []
-        for stmt in script.statements:
-            if not self._IRREVERSIBLE_RE.search(stmt.raw_sql):
+        for stmt, clean in zip(script.statements, scrubbed, strict=True):
+            if not self._IRREVERSIBLE_RE.search(clean):
                 continue
             out.append(
                 self.make_finding(

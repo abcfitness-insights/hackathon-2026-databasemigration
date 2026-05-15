@@ -7,6 +7,7 @@ import re
 
 from migguard.core.models import Category, Finding, Severity
 from migguard.core.parser import ParsedScript
+from migguard.rules._sql_text import strip_sql_noise
 from migguard.rules.base import Rule, RuleContext
 
 
@@ -26,7 +27,10 @@ class MergeOnSynapseRule(Rule):
     def check(self, script: ParsedScript, ctx: RuleContext) -> list[Finding]:
         out: list[Finding] = []
         for stmt in script.statements:
-            if not self._MERGE_RE.search(stmt.raw_sql):
+            # Scrub comments + string literals so `-- using MERGE INTO` or
+            # `('Considered MERGE INTO but used DELETE+INSERT')` doesn't
+            # fire the Synapse-compat warning.
+            if not self._MERGE_RE.search(strip_sql_noise(stmt.raw_sql)):
                 continue
             out.append(
                 self.make_finding(

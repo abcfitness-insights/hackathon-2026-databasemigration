@@ -43,7 +43,7 @@ Should show the `migguard` CLI help. If you see this, you're ready.
 python -m pytest -v
 ```
 
-**Expected:** A long list of `PASSED` lines and at the bottom `158 passed in ~0.9s`. If you see 158 passed, the engine is healthy.
+**Expected:** A long list of `PASSED` lines and at the bottom `181 passed in ~1-2s`. If you see 181 passed, the engine is healthy.
 
 ### 1.2 List all the rules MigGuard knows
 
@@ -51,7 +51,7 @@ python -m pytest -v
 python -m migguard.cli.main rules
 ```
 
-**Expected:** A table of 20 rules — their IDs, severities (high / medium / low), which dialects they apply to, one-line descriptions.
+**Expected:** A table of 26 rules — their IDs, severities (high / medium / low), which dialects they apply to, one-line descriptions.
 
 Try filtering by dialect:
 
@@ -59,7 +59,7 @@ Try filtering by dialect:
 python -m migguard.cli.main rules --dialect postgres
 ```
 
-**Expected:** 13 rules instead of 20 — the T-SQL-specific and MySQL-specific rules disappear, leaving the universal data-loss / idempotency / sequencing / naming / lifetime checks.
+**Expected:** 18 rules instead of 26 — the T-SQL-specific and MySQL-specific rules disappear, leaving the universal data-loss / idempotency / sequencing / naming / lifetime / join-risk / index-lifecycle checks.
 
 ### 1.3 Review a clean migration (proves no false positives)
 
@@ -465,13 +465,13 @@ Total runtime: ~6 minutes. Each step is one terminal command.
    ```powershell
    python -m pytest -v
    ```
-   Just shows `158 passed` for credibility.
+   Just shows `181 passed` for credibility.
 
 3. **The rule catalog** (15 sec)
    ```powershell
    python -m migguard.cli.main rules
    ```
-   Shows what the tool knows — 20 rules across data-loss, locking, idempotency, compatibility, permissions, transaction, rollback, naming, sequencing, lifetimes, and MySQL-specific categories.
+   Shows what the tool knows — 26 rules across data-loss, locking, idempotency, compatibility, permissions, transaction, rollback, naming, sequencing, lifetimes, join-risk, index-lifecycle, DBCC, and MySQL-specific categories.
 
 4. **A clean migration — no false positives** (15 sec)
    ```powershell

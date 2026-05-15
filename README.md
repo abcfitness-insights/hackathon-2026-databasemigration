@@ -12,10 +12,10 @@ Built for the ABC Fitness Engineering AI hackathon. Targets T-SQL / SQL Server /
 
 | | |
 |--|--|
-| **Catches** | Data loss, locking / downtime, missing rollback, idempotency gaps, missing transactions, Synapse-incompatible constructs, permission changes, version-sequence gaps and duplicates, naming-convention violations, **cross-migration object-lifetime bugs** (column referenced in V4 after V3 dropped it), **MySQL InnoDB footguns** (ALGORITHM hint, utf8mb4, zero-date defaults), **plus team-specific regex rule packs** (no-NOLOCK, schema prefixes, etc.) |
+| **Catches** | Data loss, locking / downtime, missing rollback, idempotency gaps, missing transactions, Synapse-incompatible constructs, permission changes, version-sequence gaps and duplicates, naming-convention violations, **cross-migration object-lifetime bugs** (column referenced in V4 after V3 dropped it), **MySQL InnoDB footguns** (ALGORITHM hint, utf8mb4, zero-date defaults), **join-explosion risks** (cartesian, many-to-many, function-on-key, nullable-key), **`DROP INDEX` without recreation**, **DBCC commands inside migrations** (escalates to HIGH for `SHRINK*` / `REPAIR_ALLOW_DATA_LOSS` / `DROPCLEANBUFFERS`), **plus team-specific regex rule packs** (no-NOLOCK, schema prefixes, etc.) |
 | **Where it runs** | Local CLI, **pre-commit hook**, GitHub PR bot, Azure DevOps PR bot, GitHub Actions CI, local web playground, Cursor IDE skill — all from the same engine |
 | **Databases** | **SQL Server, Azure SQL, Synapse (deep), MySQL (deep)** — parser also accepts Postgres and SQLite via the dialect-agnostic rules; deeper Postgres/Snowflake/Databricks rule packs are explicit future work, added on team demand |
-| **How** | Deterministic rule pack (20 built-in rules + your own YAML regex rules) for the well-known patterns + optional LLM layer for contextual judgment + schema-grounded impact estimates |
+| **How** | Deterministic rule pack (26 built-in rules + your own YAML regex rules) for the well-known patterns + optional LLM layer for contextual judgment + schema-grounded impact estimates |
 | **Output** | Rich terminal report, JSON, **SARIF 2.1.0** (GitHub Advanced Security / SonarQube), Markdown PR comment with TL;DR header and per-severity collapsing, self-contained HTML report, local web playground, plus PR status check (`succeeded` / `failed`) |
 
 ## The killer demo moment
@@ -41,7 +41,7 @@ Real numbers from real tables. The schema-facts layer reads a JSON snapshot for 
 ```bash
 cd migguard
 pip install -e ".[dev]"
-pytest                              # 158 tests, all green
+pytest                              # 181 tests, all green
 python demo/run_demo.py --no-llm    # run on every bundled fixture
 ```
 
@@ -137,13 +137,14 @@ rules:
     dialects: [tsql]
     pattern: '(?i)\bWITH\s*\(\s*NOLOCK\s*\)'
     message: NOLOCK reads dirty data. Use snapshot isolation.
+    scrub_noise: true       # ignore comments + string literals before matching
 ```
 
 ```bash
 migguard review migrations/ --rules-config rules.yaml
 ```
 
-See `examples/custom-rules.yaml` for a fully commented sample. Valid `category` values match the built-in categories (`data_loss`, `locking`, `idempotency`, `compatibility`, `permissions`, `transaction`, `rollback`, `naming`, `ordering`, `dependency`, `performance`, `other`); valid `severity` values are `high`, `medium`, `low`, `info`. Bad YAML fails loud with a precise per-rule error message — there's no silent skipping.
+See `examples/custom-rules.yaml` for a fully commented sample. Valid `category` values match the built-in categories (`data_loss`, `locking`, `idempotency`, `compatibility`, `permissions`, `transaction`, `rollback`, `naming`, `ordering`, `dependency`, `performance`, `other`); valid `severity` values are `high`, `medium`, `low`, `info`. The optional `scrub_noise: true` field tells MigGuard to strip SQL comments and single-quoted string literals from each statement before applying your regex — recommended whenever your pattern targets SQL keywords (it prevents the same keyword in an audit-log payload or a TODO comment from firing the rule). Default is `false` for backwards compatibility. Bad YAML fails loud with a precise per-rule error message — there's no silent skipping.
 
 ## SARIF for code-scanning dashboards
 
@@ -182,10 +183,10 @@ migguard explain data-loss/delete-without-where           # docs for one rule
 
 | Database | `--dialect` | Rule depth |
 |----------|-------------|------------|
-| SQL Server, Azure SQL, **Synapse** | `tsql` (default) | **Deep** — 17 rules including T-SQL-specific (`ONLINE = ON`, `sys.columns` guards, `BEGIN TRAN` wrappers, `MERGE`-on-Synapse) |
-| **MySQL** | `mysql` | **Deep** — 16 rules: universal coverage + MySQL/InnoDB specifics (`ALGORITHM=` hint, `utf8mb4` vs `utf8`, zero-date defaults) |
-| PostgreSQL | `postgres` | **Parser + universal** — 13 dialect-agnostic rules (data loss, naming, rollback, sequencing, lifetime, permissions, NOT NULL DEFAULT). Deeper Postgres rule pack (`CREATE INDEX CONCURRENTLY`, `LOCK ACCESS EXCLUSIVE`, etc.) is future work. |
-| SQLite | `sqlite` | Parser + universal — 13 rules |
+| SQL Server, Azure SQL, **Synapse** | `tsql` (default) | **Deep** — 23 rules including T-SQL-specific (`ONLINE = ON`, `sys.columns` guards, `BEGIN TRAN` wrappers, `MERGE`-on-Synapse, `DBCC` commands) |
+| **MySQL** | `mysql` | **Deep** — 21 rules: universal coverage + MySQL/InnoDB specifics (`ALGORITHM=` hint, `utf8mb4` vs `utf8`, zero-date defaults) |
+| PostgreSQL | `postgres` | **Parser + universal** — 18 dialect-agnostic rules (data loss, naming, rollback, sequencing, lifetime, permissions, NOT NULL DEFAULT, join-risk, index-lifecycle). Deeper Postgres rule pack (`CREATE INDEX CONCURRENTLY`, `LOCK ACCESS EXCLUSIVE`, etc.) is future work. |
+| SQLite | `sqlite` | Parser + universal — 18 rules |
 | Oracle, Snowflake, Databricks, BigQuery, Redshift, DB2 | not yet | Future work, added on team demand |
 
 Dialect-specific rules filter themselves automatically — a `mysql/*` rule never fires when `--dialect tsql` is used, and vice versa. There are no false positives across dialects.
@@ -260,6 +261,12 @@ If you set one of these, the LLM layer adds judgment-call findings, a plain-Engl
 | `naming/non-snake-case`, `naming/too-long`, `naming/reserved-word` | LOW / MEDIUM | Naming | all |
 | `sequencing/version-gap` | MEDIUM | Ordering | all |
 | `sequencing/duplicate-version` | HIGH | Ordering | all |
+| `joins/missing-on-clause` | HIGH (MEDIUM on explicit `CROSS JOIN`) | Performance | all |
+| `joins/many-to-many-risk` | MEDIUM | Performance | all |
+| `joins/on-nullable-key` | LOW | Performance | all |
+| `joins/function-on-key` | MEDIUM | Performance | all |
+| `rollback/index-drop-without-recreate` | MEDIUM | Rollback | all |
+| `compatibility/dbcc-command` | MEDIUM (HIGH on `SHRINK*` / `REPAIR_ALLOW_DATA_LOSS` / `DROPCLEANBUFFERS`) | Compatibility | tsql |
 | `lifetime/dropped-table-referenced` | HIGH | Ordering | all |
 | `lifetime/dropped-column-referenced` | HIGH | Ordering | all |
 | `mysql/alter-table-without-algorithm` | MEDIUM (HIGH on >1M rows) | Locking | mysql |

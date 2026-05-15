@@ -9,6 +9,7 @@ from sqlglot import exp
 
 from migguard.core.models import Category, Finding, Severity
 from migguard.core.parser import ParsedScript
+from migguard.rules._sql_text import strip_sql_noise
 from migguard.rules.base import Rule, RuleContext
 
 
@@ -103,7 +104,10 @@ class TruncateRule(Rule):
     def check(self, script: ParsedScript, ctx: RuleContext) -> list[Finding]:
         out: list[Finding] = []
         for stmt in script.statements:
-            if not self._RE.search(stmt.raw_sql):
+            # Scrub so `('Considered TRUNCATE TABLE staging')` audit-log
+            # entries or `-- TRUNCATE TABLE was rejected` comments don't
+            # trigger a HIGH-severity finding on benign INSERTs.
+            if not self._RE.search(strip_sql_noise(stmt.raw_sql)):
                 continue
             out.append(
                 self.make_finding(
