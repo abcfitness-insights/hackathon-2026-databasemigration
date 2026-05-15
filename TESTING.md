@@ -43,7 +43,7 @@ Should show the `migguard` CLI help. If you see this, you're ready.
 python -m pytest -v
 ```
 
-**Expected:** A long list of `PASSED` lines and at the bottom `180 passed in ~1-2s`. If you see 180 passed, the engine is healthy.
+**Expected:** A long list of `PASSED` lines and at the bottom `181 passed in ~1-2s`. If you see 181 passed, the engine is healthy.
 
 ### 1.2 List all the rules MigGuard knows
 
@@ -465,7 +465,7 @@ Total runtime: ~6 minutes. Each step is one terminal command.
    ```powershell
    python -m pytest -v
    ```
-   Just shows `180 passed` for credibility.
+   Just shows `181 passed` for credibility.
 
 3. **The rule catalog** (15 sec)
    ```powershell

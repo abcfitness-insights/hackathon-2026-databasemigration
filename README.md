@@ -41,7 +41,7 @@ Real numbers from real tables. The schema-facts layer reads a JSON snapshot for 
 ```bash
 cd migguard
 pip install -e ".[dev]"
-pytest                              # 180 tests, all green
+pytest                              # 181 tests, all green
 python demo/run_demo.py --no-llm    # run on every bundled fixture
 ```
 

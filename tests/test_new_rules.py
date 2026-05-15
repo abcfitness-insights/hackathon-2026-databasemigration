@@ -220,6 +220,52 @@ def test_index_rule_ignores_keywords_in_string_literals(engine: Engine) -> None:
     )
 
 
+def test_index_rule_handles_postgres_concurrently() -> None:
+    """Regression: ``_DROP_INDEX_RE`` and ``_CREATE_INDEX_RE`` did not
+    account for Postgres's optional ``CONCURRENTLY`` modifier between
+    ``INDEX`` and the (optional) ``IF [NOT] EXISTS`` clause.
+
+    Before the fix the regex captured the literal string ``CONCURRENTLY``
+    as the index name in every Postgres variant. Because every DROP and
+    every CREATE then "operated on" the same imaginary index named
+    "concurrently", any CREATE in the file silently cancelled every DROP
+    via the shared bogus capture -- real ``DROP INDEX CONCURRENTLY ix_foo``
+    statements without a recreate went unflagged. Fixed by inserting an
+    optional ``(?:CONCURRENTLY\\s+)?`` group in the correct slot of both
+    regexes.
+
+    Fixture ``15_postgres_concurrently_index.sql`` covers three Postgres
+    variants:
+
+    A. ``DROP INDEX CONCURRENTLY ix_alpha;`` with no recreate -- MUST fire.
+    B. ``DROP INDEX CONCURRENTLY ix_beta;`` + matching ``CREATE INDEX
+       CONCURRENTLY ix_beta ON ...`` -- MUST NOT fire.
+    C. ``DROP INDEX CONCURRENTLY IF EXISTS ix_gamma;`` with no recreate
+       -- MUST fire (also pins down the ``CONCURRENTLY`` / ``IF EXISTS``
+       interleave order).
+    """
+    pg_engine = Engine(llm=None, dialect="postgres")
+    findings = pg_engine.review(
+        [FIXTURES / "15_postgres_concurrently_index.sql"]
+    ).findings
+    idx = [f for f in findings if f.rule_id == "rollback/index-drop-without-recreate"]
+    assert len(idx) == 2, (
+        f"expected exactly two findings (ix_alpha + ix_gamma), got "
+        f"{[f.message[:80] for f in idx]}"
+    )
+
+    msgs = " || ".join(f.message.lower() for f in idx)
+    assert "ix_alpha" in msgs, f"Scenario A's DROP must fire; got {msgs}"
+    assert "ix_gamma" in msgs, f"Scenario C's DROP must fire; got {msgs}"
+    assert "ix_beta" not in msgs, (
+        f"Scenario B's DROP has a matching CREATE; must NOT fire. Got {msgs}"
+    )
+    assert "concurrently" not in msgs, (
+        "Findings must never report 'concurrently' as the index name -- "
+        f"that means the regex is still mis-capturing the modifier. Got: {msgs}"
+    )
+
+
 def test_new_rules_do_not_misfire_on_clean_fixture(engine: Engine) -> None:
     """The canonical clean fixture must stay clean after the new rules
     land — no false positives."""

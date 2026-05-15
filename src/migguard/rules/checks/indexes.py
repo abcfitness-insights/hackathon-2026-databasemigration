@@ -20,20 +20,35 @@ from migguard.core.parser import ParsedScript
 from migguard.rules._sql_text import strip_sql_noise
 from migguard.rules.base import Rule, RuleContext
 
-# DROP INDEX [IF EXISTS] [schema.]index [ON [schema.]table]
+# DROP INDEX [CONCURRENTLY] [IF EXISTS] [schema.]index [ON [schema.]table]
+#
+# Postgres allows an optional ``CONCURRENTLY`` modifier between ``INDEX``
+# and the (optional) ``IF EXISTS`` clause. Without the explicit slot in
+# the regex, ``DROP INDEX CONCURRENTLY ix_foo`` would capture
+# ``CONCURRENTLY`` as the index name -- silently no-op'ing the rule
+# (every CONCURRENTLY statement appears to operate on an index called
+# "concurrently", so any CREATE counterpart cancels every DROP).
 _DROP_INDEX_RE = re.compile(
-    r"\bDROP\s+INDEX\s+(?:IF\s+EXISTS\s+)?"
+    r"\bDROP\s+INDEX\s+"
+    r"(?:CONCURRENTLY\s+)?"
+    r"(?:IF\s+EXISTS\s+)?"
     r"(?P<idx>(?:\[?[A-Za-z_][\w]*\]?\.)?\[?[A-Za-z_][\w]*\]?)"
     r"(?:\s+ON\s+(?P<table>(?:\[?[A-Za-z_][\w]*\]?\.)?\[?[A-Za-z_][\w]*\]?))?",
     re.IGNORECASE,
 )
 
-# CREATE [UNIQUE] [CLUSTERED|NONCLUSTERED] INDEX [IF NOT EXISTS] [schema.]name
+# CREATE [UNIQUE] [CLUSTERED|NONCLUSTERED] INDEX [CONCURRENTLY]
+#        [IF NOT EXISTS] [schema.]name
+#
+# CONCURRENTLY is Postgres-only and must follow ``INDEX``; CLUSTERED /
+# NONCLUSTERED are T-SQL-only and must come before ``INDEX``. We accept
+# both because the rule is dialect-agnostic.
 _CREATE_INDEX_RE = re.compile(
     r"\bCREATE\s+"
     r"(?:UNIQUE\s+)?"
     r"(?:CLUSTERED\s+|NONCLUSTERED\s+)?"
     r"INDEX\s+"
+    r"(?:CONCURRENTLY\s+)?"
     r"(?:IF\s+NOT\s+EXISTS\s+)?"
     r"(?P<idx>(?:\[?[A-Za-z_][\w]*\]?\.)?\[?[A-Za-z_][\w]*\]?)",
     re.IGNORECASE,
