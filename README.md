@@ -41,7 +41,7 @@ Real numbers from real tables. The schema-facts layer reads a JSON snapshot for 
 ```bash
 cd migguard
 pip install -e ".[dev]"
-pytest                              # 169 tests, all green
+pytest                              # 180 tests, all green
 python demo/run_demo.py --no-llm    # run on every bundled fixture
 ```
 
@@ -137,13 +137,14 @@ rules:
     dialects: [tsql]
     pattern: '(?i)\bWITH\s*\(\s*NOLOCK\s*\)'
     message: NOLOCK reads dirty data. Use snapshot isolation.
+    scrub_noise: true       # ignore comments + string literals before matching
 ```
 
 ```bash
 migguard review migrations/ --rules-config rules.yaml
 ```
 
-See `examples/custom-rules.yaml` for a fully commented sample. Valid `category` values match the built-in categories (`data_loss`, `locking`, `idempotency`, `compatibility`, `permissions`, `transaction`, `rollback`, `naming`, `ordering`, `dependency`, `performance`, `other`); valid `severity` values are `high`, `medium`, `low`, `info`. Bad YAML fails loud with a precise per-rule error message — there's no silent skipping.
+See `examples/custom-rules.yaml` for a fully commented sample. Valid `category` values match the built-in categories (`data_loss`, `locking`, `idempotency`, `compatibility`, `permissions`, `transaction`, `rollback`, `naming`, `ordering`, `dependency`, `performance`, `other`); valid `severity` values are `high`, `medium`, `low`, `info`. The optional `scrub_noise: true` field tells MigGuard to strip SQL comments and single-quoted string literals from each statement before applying your regex — recommended whenever your pattern targets SQL keywords (it prevents the same keyword in an audit-log payload or a TODO comment from firing the rule). Default is `false` for backwards compatibility. Bad YAML fails loud with a precise per-rule error message — there's no silent skipping.
 
 ## SARIF for code-scanning dashboards
 

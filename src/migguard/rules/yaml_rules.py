@@ -8,6 +8,15 @@ The schema is intentionally small — anything truly complex should be a
 real Python rule. Regex covers the 80%: 'never reference table X', 'all
 tables must start with prefix Y', 'no NOLOCK hints in this repo'.
 
+Optional ``scrub_noise`` field (default ``false`` for backwards
+compatibility): when ``true``, MigGuard pre-strips SQL comments AND
+single-quoted string literals from each statement before running your
+regex. Use this whenever your pattern targets SQL syntax keywords
+(``NOLOCK``, ``DROP``, ``MERGE``, ...) — without it, the same keyword
+appearing in an audit-log payload or a TODO comment will trigger a
+false-positive finding. Leave it off when your pattern intentionally
+targets string-literal content.
+
 Example::
 
     # .migguard/rules.yaml
@@ -20,6 +29,7 @@ Example::
         pattern: '(?i)\\bWITH\\s*\\(\\s*NOLOCK\\s*\\)'
         message: NOLOCK reads dirty data; use snapshot isolation instead.
         dialects: [tsql]
+        scrub_noise: true
 """
 
 from __future__ import annotations
@@ -32,6 +42,7 @@ import yaml
 
 from migguard.core.models import Category, Finding, Severity
 from migguard.core.parser import ParsedScript
+from migguard.rules._sql_text import strip_sql_noise
 from migguard.rules.base import ALL_DIALECTS, Rule, RuleContext
 
 _VALID_SEVERITIES = {s.value: s for s in Severity}
@@ -54,12 +65,14 @@ class RegexRule(Rule):
     _pattern: re.Pattern[str] = re.compile("")
     _message: str = ""
     _suggestion: str | None = None
+    _scrub_noise: bool = False
 
     def check(self, script: ParsedScript, ctx: RuleContext) -> list[Finding]:
         del ctx
         findings: list[Finding] = []
         for stmt in script.statements:
-            if not self._pattern.search(stmt.raw_sql):
+            text = strip_sql_noise(stmt.raw_sql) if self._scrub_noise else stmt.raw_sql
+            if not self._pattern.search(text):
                 continue
             findings.append(
                 self.make_finding(
@@ -126,6 +139,13 @@ def _build_rule(entry: dict, source: Path) -> RegexRule:
     message = entry.get("message") or f"Pattern {rule_id} matched in this statement."
     suggestion = entry.get("suggestion")
 
+    scrub_noise_raw = entry.get("scrub_noise", False)
+    if not isinstance(scrub_noise_raw, bool):
+        raise YamlRuleConfigError(
+            f"{source}: rule '{rule_id}' has non-boolean scrub_noise "
+            f"value {scrub_noise_raw!r}; must be true or false"
+        )
+
     rule = RegexRule()
     rule.rule_id = rule_id
     rule.title = title
@@ -135,6 +155,7 @@ def _build_rule(entry: dict, source: Path) -> RegexRule:
     rule._pattern = pattern
     rule._message = message
     rule._suggestion = suggestion
+    rule._scrub_noise = scrub_noise_raw
     return rule
 
 

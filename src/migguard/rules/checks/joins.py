@@ -186,11 +186,13 @@ class JoinOnNullableKeyRule(Rule):
             ast = stmt.ast
             if ast is None:
                 continue
+            # alias_map is invariant across joins within the same AST, so
+            # compute it once per statement (matches ManyToManyJoinRule).
+            aliases = _alias_map(ast)
             for join in ast.find_all(exp.Join):
                 on = join.args.get("on")
                 if on is None:
                     continue
-                aliases = _alias_map(ast)
                 for col in on.find_all(exp.Column):
                     col_name = (col.name or "").lower()
                     if not col_name:
@@ -319,12 +321,17 @@ class ManyToManyJoinRule(Rule):
                     continue
                 left_tbl = _column_table(left, aliases)
                 right_tbl = _column_table(right, aliases)
-                left_facts = (
-                    ctx.fact_for(*left_tbl) if all(left_tbl) else None
-                )
-                right_facts = (
-                    ctx.fact_for(*right_tbl) if all(right_tbl) else None
-                )
+                # fact_for() already accepts a None schema (it defaults to
+                # the dialect's implicit schema -- "dbo" for T-SQL) and
+                # returns None when the table name is missing. Guarding
+                # with `all(left_tbl)` here would suppress legitimate
+                # lookups for unqualified references like `FROM customer c`,
+                # making the rule silently no-op on the common case. Match
+                # the pattern used by every other schema-grounded rule
+                # (data_loss, locking, mysql_rules) and call fact_for
+                # directly.
+                left_facts = ctx.fact_for(*left_tbl)
+                right_facts = ctx.fact_for(*right_tbl)
                 if not (left_facts and right_facts):
                     continue
                 if not (left_facts.is_large and right_facts.is_large):

@@ -17,6 +17,7 @@ import re
 
 from migguard.core.models import Category, Finding, Severity
 from migguard.core.parser import ParsedScript
+from migguard.rules._sql_text import strip_sql_noise
 from migguard.rules.base import Rule, RuleContext
 
 # DROP INDEX [IF EXISTS] [schema.]index [ON [schema.]table]
@@ -54,16 +55,25 @@ class IndexDropWithoutRecreateRule(Rule):
     severity = Severity.MEDIUM
 
     def check(self, script: ParsedScript, ctx: RuleContext) -> list[Finding]:
+        # Strip comments and string literals before regex matching. The
+        # parser keeps leading comments attached to the next statement's
+        # raw_sql, and string literals like `'engineer note: DROP INDEX
+        # ix_phantom was avoided'` would otherwise be mistaken for real
+        # SQL (false positive); a TODO comment naming a future CREATE
+        # INDEX would silently suppress a real DROP (false negative).
+        # See migguard.rules._sql_text for the canonical helper.
         created: set[str] = set()
         for stmt in script.statements:
-            for m in _CREATE_INDEX_RE.finditer(stmt.raw_sql):
+            clean = strip_sql_noise(stmt.raw_sql)
+            for m in _CREATE_INDEX_RE.finditer(clean):
                 idx_qual = _norm_ident(m.group("idx"))
                 created.add(idx_qual.split(".")[-1])
 
         out: list[Finding] = []
         seen: set[tuple[int, str]] = set()
         for stmt in script.statements:
-            for m in _DROP_INDEX_RE.finditer(stmt.raw_sql):
+            clean = strip_sql_noise(stmt.raw_sql)
+            for m in _DROP_INDEX_RE.finditer(clean):
                 idx_qual = _norm_ident(m.group("idx"))
                 idx_name = idx_qual.split(".")[-1]
                 if idx_name in created:

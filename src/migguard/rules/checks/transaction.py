@@ -7,6 +7,7 @@ import re
 
 from migguard.core.models import Category, Finding, Severity
 from migguard.core.parser import ParsedScript
+from migguard.rules._sql_text import strip_sql_noise
 from migguard.rules.base import Rule, RuleContext
 
 
@@ -24,11 +25,15 @@ class WriteWithoutTransactionRule(Rule):
     _BEGIN_TRAN_RE = re.compile(r"\bBEGIN\s+(TRY\b.*\bBEGIN\s+)?TRAN(SACTION)?\b", re.IGNORECASE | re.DOTALL)
 
     def check(self, script: ParsedScript, ctx: RuleContext) -> list[Finding]:
-        whole = script.raw_text
-        if self._BEGIN_TRAN_RE.search(whole):
+        # Scrub the whole file once for the BEGIN TRAN guard check (so a
+        # `-- This batch is wrapped in BEGIN TRAN` header comment doesn't
+        # fool the rule) and again per-statement for the write detection
+        # (so `'INSERT into ...'` inside a string literal isn't reported as
+        # an unwrapped write).
+        if self._BEGIN_TRAN_RE.search(strip_sql_noise(script.raw_text)):
             return []
         for stmt in script.statements:
-            if not self._WRITE_RE.search(stmt.raw_sql):
+            if not self._WRITE_RE.search(strip_sql_noise(stmt.raw_sql)):
                 continue
             return [
                 self.make_finding(

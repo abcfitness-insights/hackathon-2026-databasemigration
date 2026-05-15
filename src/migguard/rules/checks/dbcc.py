@@ -26,24 +26,14 @@ import re
 
 from migguard.core.models import Category, Finding, Severity
 from migguard.core.parser import ParsedScript
+from migguard.rules._sql_text import strip_sql_noise
 from migguard.rules.base import Rule, RuleContext
 
 _DBCC_RE = re.compile(r"\bDBCC\s+(?P<cmd>[A-Za-z_]+)", re.IGNORECASE)
 _REPAIR_ALLOW_LOSS_RE = re.compile(r"\bREPAIR_ALLOW_DATA_LOSS\b", re.IGNORECASE)
-_LINE_COMMENT_RE = re.compile(r"--[^\n]*")
-_BLOCK_COMMENT_RE = re.compile(r"/\*.*?\*/", re.DOTALL)
 
 _DANGEROUS_SHRINK = {"SHRINKDATABASE", "SHRINKFILE"}
 _DANGEROUS_OTHER = {"DROPCLEANBUFFERS"}
-
-
-def _strip_comments(sql: str) -> str:
-    """Remove SQL comments before pattern-matching. The parser keeps leading
-    comments attached to the next statement's ``raw_sql``, so a generic
-    keyword like ``DBCC`` can appear inside a comment block that documents
-    a fixture — we don't want that to fire the rule."""
-    no_block = _BLOCK_COMMENT_RE.sub(" ", sql)
-    return _LINE_COMMENT_RE.sub("", no_block)
 
 
 class DbccCommandRule(Rule):
@@ -58,7 +48,7 @@ class DbccCommandRule(Rule):
     def check(self, script: ParsedScript, ctx: RuleContext) -> list[Finding]:
         out: list[Finding] = []
         for stmt in script.statements:
-            sql = _strip_comments(stmt.raw_sql)
+            sql = strip_sql_noise(stmt.raw_sql)
             m = _DBCC_RE.search(sql)
             if not m:
                 continue
