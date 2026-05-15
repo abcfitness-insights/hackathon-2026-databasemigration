@@ -12,10 +12,10 @@ Built for the ABC Fitness Engineering AI hackathon. Targets T-SQL / SQL Server /
 
 | | |
 |--|--|
-| **Catches** | Data loss, locking / downtime, missing rollback, idempotency gaps, missing transactions, Synapse-incompatible constructs, permission changes, version-sequence gaps and duplicates, naming-convention violations, **cross-migration object-lifetime bugs** (column referenced in V4 after V3 dropped it), **MySQL InnoDB footguns** (ALGORITHM hint, utf8mb4, zero-date defaults), **plus team-specific regex rule packs** (no-NOLOCK, schema prefixes, etc.) |
+| **Catches** | Data loss, locking / downtime, missing rollback, idempotency gaps, missing transactions, Synapse-incompatible constructs, permission changes, version-sequence gaps and duplicates, naming-convention violations, **cross-migration object-lifetime bugs** (column referenced in V4 after V3 dropped it), **MySQL InnoDB footguns** (ALGORITHM hint, utf8mb4, zero-date defaults), **join-explosion risks** (cartesian, many-to-many, function-on-key, nullable-key), **`DROP INDEX` without recreation**, **DBCC commands inside migrations** (escalates to HIGH for `SHRINK*` / `REPAIR_ALLOW_DATA_LOSS` / `DROPCLEANBUFFERS`), **plus team-specific regex rule packs** (no-NOLOCK, schema prefixes, etc.) |
 | **Where it runs** | Local CLI, **pre-commit hook**, GitHub PR bot, Azure DevOps PR bot, GitHub Actions CI, local web playground, Cursor IDE skill — all from the same engine |
 | **Databases** | **SQL Server, Azure SQL, Synapse (deep), MySQL (deep)** — parser also accepts Postgres and SQLite via the dialect-agnostic rules; deeper Postgres/Snowflake/Databricks rule packs are explicit future work, added on team demand |
-| **How** | Deterministic rule pack (20 built-in rules + your own YAML regex rules) for the well-known patterns + optional LLM layer for contextual judgment + schema-grounded impact estimates |
+| **How** | Deterministic rule pack (26 built-in rules + your own YAML regex rules) for the well-known patterns + optional LLM layer for contextual judgment + schema-grounded impact estimates |
 | **Output** | Rich terminal report, JSON, **SARIF 2.1.0** (GitHub Advanced Security / SonarQube), Markdown PR comment with TL;DR header and per-severity collapsing, self-contained HTML report, local web playground, plus PR status check (`succeeded` / `failed`) |
 
 ## The killer demo moment
@@ -260,6 +260,12 @@ If you set one of these, the LLM layer adds judgment-call findings, a plain-Engl
 | `naming/non-snake-case`, `naming/too-long`, `naming/reserved-word` | LOW / MEDIUM | Naming | all |
 | `sequencing/version-gap` | MEDIUM | Ordering | all |
 | `sequencing/duplicate-version` | HIGH | Ordering | all |
+| `joins/missing-on-clause` | HIGH (MEDIUM on explicit `CROSS JOIN`) | Performance | all |
+| `joins/many-to-many-risk` | MEDIUM | Performance | all |
+| `joins/on-nullable-key` | LOW | Performance | all |
+| `joins/function-on-key` | MEDIUM | Performance | all |
+| `rollback/index-drop-without-recreate` | MEDIUM | Rollback | all |
+| `compatibility/dbcc-command` | MEDIUM (HIGH on `SHRINK*` / `REPAIR_ALLOW_DATA_LOSS` / `DROPCLEANBUFFERS`) | Compatibility | tsql |
 | `lifetime/dropped-table-referenced` | HIGH | Ordering | all |
 | `lifetime/dropped-column-referenced` | HIGH | Ordering | all |
 | `mysql/alter-table-without-algorithm` | MEDIUM (HIGH on >1M rows) | Locking | mysql |

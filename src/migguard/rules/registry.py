@@ -11,10 +11,18 @@ from migguard.rules.checks.data_loss import (
     TruncateRule,
     UpdateWithoutWhereRule,
 )
+from migguard.rules.checks.dbcc import DbccCommandRule
 from migguard.rules.checks.idempotency import (
     AlterTableWithoutGuardRule,
     CreateTableWithoutIfNotExistsRule,
     DropWithoutIfExistsRule,
+)
+from migguard.rules.checks.indexes import IndexDropWithoutRecreateRule
+from migguard.rules.checks.joins import (
+    JoinFunctionOnKeyRule,
+    JoinMissingOnRule,
+    JoinOnNullableKeyRule,
+    ManyToManyJoinRule,
 )
 from migguard.rules.checks.lifetimes import ObjectLifetimeRule
 from migguard.rules.checks.locking import (
@@ -56,4 +64,10 @@ def all_rules() -> list[Rule]:
         AlterTableWithoutAlgorithmRule(),
         Utf8NotUtf8mb4Rule(),
         ZeroDateDefaultRule(),
+        JoinMissingOnRule(),
+        JoinOnNullableKeyRule(),
+        JoinFunctionOnKeyRule(),
+        ManyToManyJoinRule(),
+        IndexDropWithoutRecreateRule(),
+        DbccCommandRule(),
     ]

@@ -90,10 +90,11 @@ Surface this list when the user asks "what does MigGuard check for" or "what rul
 - **Data loss**: `DELETE` / `UPDATE` without `WHERE`, `TRUNCATE`, `DROP TABLE`, `DROP SCHEMA`
 - **Locking**: `NOT NULL DEFAULT` on large tables, `CREATE INDEX` without `ONLINE = ON` (T-SQL)
 - **Idempotency**: `DROP` without `IF EXISTS`, `CREATE TABLE` without `IF NOT EXISTS`, `ALTER TABLE ADD COLUMN` without column-existence guard
-- **Compatibility**: `MERGE` on Synapse (unsupported)
+- **Compatibility**: `MERGE` on Synapse (unsupported), `DBCC` commands in migrations (T-SQL — escalates to HIGH for `SHRINK*` / `REPAIR_ALLOW_DATA_LOSS` / `DROPCLEANBUFFERS`)
 - **Permissions**: `GRANT` / `DENY` / `REVOKE` outside an allowlist
+- **Performance / joins**: `JOIN` without `ON` (cartesian), possible many-to-many joins between large tables on non-key columns, joins on columns added as nullable in the same migration, function calls on join keys (`UPPER(...)` / `CAST(...)` etc. — kills index seeks)
 - **Transactions**: missing `BEGIN TRAN` / `COMMIT` wrapper (T-SQL)
-- **Rollback**: missing companion `.down.sql` script
+- **Rollback**: missing companion `.down.sql` script, `DROP INDEX` without a matching `CREATE INDEX` in the same migration
 - **Naming**: non-snake-case, too-long, reserved-word table/column names
 - **Sequencing**: version gaps and duplicates across a directory of migrations
 
