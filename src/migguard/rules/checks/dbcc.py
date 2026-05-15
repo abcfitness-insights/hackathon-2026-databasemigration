@@ -51,7 +51,7 @@ class DbccCommandRule(Rule):
 
     rule_id = "compatibility/dbcc-command"
     title = "DBCC command in migration"
-    category = Category.OTHER
+    category = Category.COMPATIBILITY
     severity = Severity.MEDIUM
     dialects = frozenset({"tsql"})
 

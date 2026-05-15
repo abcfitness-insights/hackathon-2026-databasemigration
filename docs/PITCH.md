@@ -20,7 +20,7 @@ Senior engineers spend hours catching these. Juniors don't know the patterns. Th
 A hybrid AI bot that reviews every migration PR automatically:
 
 1. **Parses** the SQL with sqlglot — T-SQL (SQL Server, Azure SQL, Synapse) and MySQL with deep dialect-specific rules; Postgres and SQLite via universal rules.
-2. **Runs 20 deterministic rules** for the well-known dangerous patterns. Each finding includes severity, rule ID, line range, message, and a concrete suggested fix. Teams can add their own regex rules via a YAML pack.
+2. **Runs 26 deterministic rules** for the well-known dangerous patterns. Each finding includes severity, rule ID, line range, message, and a concrete suggested fix. Teams can add their own regex rules via a YAML pack.
 3. **Grounds severity in real schema facts** — row counts, indexes, FKs. `NOT NULL DEFAULT` on a small lookup table is MEDIUM; on `app.customer` (12.4M rows) it's HIGH with an estimated lock window.
 4. **Optionally invokes an LLM** for cross-statement ordering risks, a plain-English summary, and a best-effort auto-generated rollback script.
 5. **Posts a Markdown review comment** with collapsible suggestions and sets a PR status check (`succeeded` / `failed`).

@@ -41,7 +41,7 @@ Real numbers from real tables. The schema-facts layer reads a JSON snapshot for 
 ```bash
 cd migguard
 pip install -e ".[dev]"
-pytest                              # 158 tests, all green
+pytest                              # 169 tests, all green
 python demo/run_demo.py --no-llm    # run on every bundled fixture
 ```
 
@@ -182,10 +182,10 @@ migguard explain data-loss/delete-without-where           # docs for one rule
 
 | Database | `--dialect` | Rule depth |
 |----------|-------------|------------|
-| SQL Server, Azure SQL, **Synapse** | `tsql` (default) | **Deep** — 17 rules including T-SQL-specific (`ONLINE = ON`, `sys.columns` guards, `BEGIN TRAN` wrappers, `MERGE`-on-Synapse) |
-| **MySQL** | `mysql` | **Deep** — 16 rules: universal coverage + MySQL/InnoDB specifics (`ALGORITHM=` hint, `utf8mb4` vs `utf8`, zero-date defaults) |
-| PostgreSQL | `postgres` | **Parser + universal** — 13 dialect-agnostic rules (data loss, naming, rollback, sequencing, lifetime, permissions, NOT NULL DEFAULT). Deeper Postgres rule pack (`CREATE INDEX CONCURRENTLY`, `LOCK ACCESS EXCLUSIVE`, etc.) is future work. |
-| SQLite | `sqlite` | Parser + universal — 13 rules |
+| SQL Server, Azure SQL, **Synapse** | `tsql` (default) | **Deep** — 23 rules including T-SQL-specific (`ONLINE = ON`, `sys.columns` guards, `BEGIN TRAN` wrappers, `MERGE`-on-Synapse, `DBCC` commands) |
+| **MySQL** | `mysql` | **Deep** — 21 rules: universal coverage + MySQL/InnoDB specifics (`ALGORITHM=` hint, `utf8mb4` vs `utf8`, zero-date defaults) |
+| PostgreSQL | `postgres` | **Parser + universal** — 18 dialect-agnostic rules (data loss, naming, rollback, sequencing, lifetime, permissions, NOT NULL DEFAULT, join-risk, index-lifecycle). Deeper Postgres rule pack (`CREATE INDEX CONCURRENTLY`, `LOCK ACCESS EXCLUSIVE`, etc.) is future work. |
+| SQLite | `sqlite` | Parser + universal — 18 rules |
 | Oracle, Snowflake, Databricks, BigQuery, Redshift, DB2 | not yet | Future work, added on team demand |
 
 Dialect-specific rules filter themselves automatically — a `mysql/*` rule never fires when `--dialect tsql` is used, and vice versa. There are no false positives across dialects.
